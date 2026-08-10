@@ -3,7 +3,9 @@
 # Usage: ./scripts/deploy.sh
 set -euo pipefail
 
-HOST="vps-hetzner"
+# hermes — dedicated VPS, deliberately NOT the box that runs the
+# kohenavocats.com WordPress in production.
+HOST="hermes"
 REMOTE_DIR="/var/www/iliaskalalou.com"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -26,5 +28,5 @@ if [ "$code" = "200" ]; then
   echo "OK — https://iliaskalalou.com/ responded 200"
 else
   echo "https://iliaskalalou.com/ responded $code (expected while DNS is not pointing here yet)"
-  echo "Fallback URL: https://ilias.46-224-152-225.sslip.io/"
+  echo "Fallback URL: https://ilias.157-180-126-197.sslip.io/"
 fi
