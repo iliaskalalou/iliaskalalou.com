@@ -1,11 +1,29 @@
 import Hero from "@/components/Hero";
 import Magnetic from "@/components/Magnetic";
+import Marquee from "@/components/Marquee";
 import Reveal, { RevealText } from "@/components/Reveal";
+import WorkGallery, { type WorkItem } from "@/components/WorkGallery";
 
-const projects = [
-  { title: "Freelance — AI Startup", tag: "ML Engineering · 2025 — now" },
+const workItems: WorkItem[] = [
+  {
+    title: "Freelance — AI Startup",
+    tag: "ML Engineering",
+    year: "2025 — now",
+    description:
+      "A year of production work: data pipelines, model training and shipping ML systems.",
+  },
   { title: "Project Two", tag: "To be added" },
   { title: "Project Three", tag: "To be added" },
+];
+
+const skills = [
+  "Machine Learning",
+  "Data Engineering",
+  "Python",
+  "PyTorch",
+  "Spark",
+  "Next.js",
+  "AWS",
 ];
 
 export default function Home() {
@@ -30,25 +48,15 @@ export default function Home() {
 
       <Hero />
 
-      <section id="work" className="scroll-mt-24 px-6 py-24 md:px-12">
-        <Reveal>
+      <Marquee items={skills} />
+
+      <section id="work" className="scroll-mt-24 py-24">
+        <Reveal className="px-6 md:px-12">
           <p className="mb-10 text-sm uppercase tracking-[0.25em] text-muted">
             Selected work
           </p>
         </Reveal>
-        <ul>
-          {projects.map((p, i) => (
-            <Reveal key={p.title} delay={i * 0.08}>
-              <li className="group flex items-baseline justify-between border-t border-line py-8">
-                <span className="text-2xl font-medium transition-colors group-hover:text-muted md:text-4xl">
-                  {p.title}
-                </span>
-                <span className="text-sm text-muted">{p.tag}</span>
-              </li>
-            </Reveal>
-          ))}
-        </ul>
-        <div className="border-t border-line" />
+        <WorkGallery items={workItems} />
       </section>
 
       <section id="about" className="scroll-mt-24 px-6 py-24 md:px-12">
@@ -91,7 +99,7 @@ export default function Home() {
             </Magnetic>
             <Magnetic>
               <a
-                href="https://github.com/"
+                href="https://github.com/iliaskalalou"
                 className="rounded-full border border-line px-6 py-3 text-sm transition-colors hover:border-foreground"
               >
                 GitHub
