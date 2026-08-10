@@ -1,36 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# iliaskalalou.com
 
-## Getting Started
+Personal site of Ilias Kalalou — AI & Data engineer, EPITA (AI & Big Data major),
+freelance machine learning engineer.
 
-First, run the development server:
+## Stack
+
+- [Next.js 16](https://nextjs.org) (App Router) + TypeScript
+- [Tailwind CSS 4](https://tailwindcss.com) — CSS-first config, no `tailwind.config.js`
+- [Framer Motion](https://motion.dev) for the interaction layer
+- [Lenis](https://lenis.darkroom.engineering) for smooth scrolling
+
+## Development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The site runs at http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run build   # production build
+npx tsc --noEmit
+npx eslint src/
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Notes
 
-## Learn More
+Motion is opt-out: every animated component honours
+`prefers-reduced-motion`, rendering the final state instantly for visitors who
+ask for it.
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Search indexing is controlled by a single flag in [`src/lib/site.ts`](src/lib/site.ts).
+While `INDEXABLE` is `false`, `robots.txt` disallows crawlers and the pages carry a
+`noindex` meta tag.
