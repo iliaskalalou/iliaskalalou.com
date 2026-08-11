@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Momiji leaf system — honest physics</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #0c0c0c;
+    overflow: hidden;
+  }
+  #leaf-canvas {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    display: block;
+  }
+  /* ---- dev scaffolding only: stripped at integration ---- */
+  #panel {
+    position: fixed; top: 14px; left: 14px; z-index: 10;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #cfc7bd;
+    background: rgba(18,17,16,0.82);
+    border: 1px solid rgba(255,220,190,0.14);
+    border-radius: 8px;
+    padding: 11px 13px 12px;
+    width: 218px;
+    backdrop-filter: blur(6px);
+    user-select: none;
+  }
+  #panel h1 { font-size: 11px; margin: 0 0 9px; letter-spacing: .09em;
+               text-transform: uppercase; color: #8d8378; font-weight: 600; }
+  #panel .row { display: flex; justify-content: space-between; gap: 8px; }
+  #panel .k { color: #7d746a; }
+  #panel .v { color: #e8b98d; font-variant-numeric: tabular-nums; }
+  #intensity { width: 100%; margin: 8px 0 4px; accent-color: #c8562f; }
+  #panel .btns { display: flex; gap: 5px; margin-top: 9px; }
+  #panel button {
+    flex: 1; font: inherit; font-size: 11px; padding: 3px 0; cursor: pointer;
+    color: #cfc7bd; background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,220,190,0.16); border-radius: 4px;
+  }
+  #panel button:hover { background: rgba(255,220,190,0.13); }
+  #panel .note { margin-top: 9px; color: #5d564e; font-size: 10px; line-height: 1.45; }
+</style>
+</head>
+<body>
+
+<canvas id="leaf-canvas"></canvas>
+
+<div id="panel">
+  <h1>Leaf system</h1>
+  <div class="row"><span class="k">intensity</span><span class="v" id="v-int">0.55</span></div>
+  <input type="range" id="intensity" min="0" max="1.2" step="0.01" value="0.55">
+  <div class="row"><span class="k">fps</span><span class="v" id="v-fps">–</span></div>
+  <div class="row"><span class="k">live leaves</span><span class="v" id="v-count">0</span></div>
+  <div class="row"><span class="k">viewport</span><span class="v" id="v-vp">–</span></div>
+  <div class="btns">
+    <button id="b-0">0</button>
+    <button id="b-35">.35</button>
+    <button id="b-1">1.0</button>
+    <button id="b-12">1.2</button>
+  </div>
+  <div class="btns">
+    <button id="b-pause">pause</button>
+    <button id="b-tree">tree</button>
+  </div>
+  <div class="note" id="v-note"></div>
+</div>
+
+<script>
+/* ============================================================================
+   MOMIJI LEAF SYSTEM  —  Canvas 2D, vanilla, zero per-frame allocation.
+
+   PHILOSOPHY: honest physics. Every leaf is a point mass in a fluid.
+   Nothing about its path is authored; the path is the integral of
+
+       a = g  +  a_drag(v - W)  +  a_lift(v - W, tumble phase)
+
+   where W(x, y, t) is a divergence-free wind field. Whether a leaf crosses
+   the frame or sinks to the ground is decided by its own drag-to-mass ratio,
+   where it detached, and which gust or eddy it happened to fall into.
+
+   COORDINATE SYSTEM
+   -----------------
+   All physics runs in NORMALISED VIEWPORT SPACE: u in [0,1] left->right,
+   v in [0,1] top->bottom. Velocities are "viewport widths (or heights) per
+   second". This is deliberately ANISOTROPIC: it means the time for a leaf to
+   cross the frame and the time for it to reach the ground are both identical
+   on a 390px phone and a 2560px monitor. Pixels only appear at draw time.
+   Sizes use an isotropic reference length sqrt(w*h) so leaves keep the same
+   share of the screen area at any resolution.
+   ============================================================================ */
+(function () {
+'use strict';
+
+/* ------------------------------------------------------------------ config */
+var CFG = {
+  /* pool */
+  MAX_LEAVES: 368,      // hard pool size, allocated once
+  SOFT_CAP:   330,      // stop honouring spawn events above this many alive
+                        // (headroom: gust peaks must not clip, or the tree
+                        //  visibly "runs out" of leaves at the top of a gust)
+
+  /* frame */
+  DPR_CAP:      1.5,
+  FIXED_DT:     1 / 120, // physics substep (s)
+  MAX_FRAME_DT: 0.05,    // clamp: a tab returning from background must not teleport
+  MAX_SUBSTEPS: 8,
+
+  /* intensity -> world */
+  INTENSITY_TAU: 0.85,   // s, exponential smoothing of the live intensity knob
+  WIND_MIN:  0.055,      // viewport-widths/s of mean flow at intensity 0
+  WIND_MAX:  0.55,       //                            at intensity 1
+  WIND_EXP:  1.2,
+  TURB_MIN:  0.030,      // eddy velocity amplitude at intensity 0
+  TURB_MAX:  0.185,      //                         at intensity 1
+  SPAWN_MIN: 1.15,       // detachments/s at intensity 0 (trickle, never frozen)
+  SPAWN_MAX: 42.0,       // additional detachments/s at intensity 1
+  SPAWN_EXP: 1.25,
+  SPAWN_GUST_A: 0.55,    // detachment rate is gust-modulated: leaves come off
+  SPAWN_GUST_B: 0.62,    // in natural flurries, not at a steady drip
+
+  /* per-leaf aero (see NOTES.md) */
+  GRAV:        0.50,     // viewport-heights/s^2, before per-leaf jitter
+  GRAV_JIT:    0.20,
+  VTERM:       0.175,    // median terminal fall speed, viewport-heights/s
+  VTERM_SIGMA: 0.34,     // log-normal spread -> the crosser/lander split
+  VTERM_LO:    0.095,
+  VTERM_HI:    0.340,
+  CD_MIN:      0.25,     // drag coefficient knife-edge / face-on ratio
+  /* Per-leaf peak lift, as a multiple of that leaf's mean drag. A rigid flat
+     plate tops out near 1; these are higher on purpose. The flutter amplitude
+     goes as a/OMEGA^2, and at strict plate values it measured 0.08 leaf-widths
+     of cross-path slip — invisible. A momiji leaf is lobed and cambered, not a
+     plate, so >1 is defensible; but this is the one number in the model tuned
+     to the eye rather than derived. See NOTES.md. */
+  LIFT_LO:     1.20,
+  LIFT_HI:     3.20,
+
+  /* Tumble rate. The lift reverses FOUR times per revolution (see the
+     flat-plate block in step), so the flutter frequency is 2*omega, and the
+     Strouhal estimate for a leaf of this size at terminal speed puts that
+     near 3.5-4 rad/s. That means omega itself should be slow: roughly one
+     revolution every 1.5-4 s, not the frantic spin a larger constant gives. */
+  TUMBLE_BASE_LO: 0.50,  // rad/s at zero airspeed
+  TUMBLE_BASE_HI: 2.60,
+  TUMBLE_K_LO:    4.0,   // rad/s per (viewport-height/s) of airspeed
+  TUMBLE_K_HI:   14.0,
+  TUMBLE_CAP:    16.0,   // rad/s, keeps the 16-frame sprite from aliasing
+
+  /* parallax: one factor scales accel, wind, velocity and size together */
+  PAR_LO: 0.58,
+  PAR_HI: 1.30,
+
+  /* size */
+  SIZE_FRAC:  0.046,     // of sqrt(w*h)
+  SIZE_VAR_LO: 0.72,
+  SIZE_VAR_HI: 1.28,
+
+  /* ground */
+  GROUND_LO:  0.885,     // far leaves settle higher up the frame
+  GROUND_HI:  0.995,
+  BOUNCE:     0.18,
+  GROUND_FRIC: 0.55,
+  SETTLE_CALM: 0.60,     // s for tumble+lift to die after touchdown
+  FADE_DELAY: 0.28,      // how long a landed leaf rests before dissolving.
+  FADE_DUR:   0.95,      // This pair is the real control on how much litter
+  FADE_JITTER: 0.55,     // gathers at the bottom-left, where fall lines meet.
+                         // Jitter breaks the "landed together, faded together"
+                         // tell that a fixed duration produces.
+
+  /* misc */
+  EXIT_MARGIN: 0.07,
+  ALIGN_REF:   0.10,     // airspeed at which heading-alignment is half strength
+  ALIGN_RATE:  6.0
+};
+
+var TWO_PI = Math.PI * 2, HALF_PI = Math.PI * 0.5, INV_TWO_PI = 1 / TWO_PI;
+
+/* CD normalisation: mean of (CD_MIN + (1-CD_MIN) sin^2) over a turn is
+   (1+CD_MIN)/2. Divide it out so VTERM stays the calibrated terminal speed. */
+var CD_MEAN = (1 + CFG.CD_MIN) * 0.5;
+var CD_A = CFG.CD_MIN / CD_MEAN;
+var CD_B = (1 - CFG.CD_MIN) / CD_MEAN;
+
+/* ------------------------------------------------------------------ canopy */
+/* Emission lobes, normalised. x in [.72,1.02], y in [.06,.66] as briefed,
+   weighted toward the canopy mass rather than uniform over the box. */
+var LOBES = [
+  /* cu     cv     ru     rv     weight */
+  0.868, 0.300, 0.108, 0.190, 0.42,
+  0.938, 0.442, 0.078, 0.170, 0.31,
+  0.798, 0.198, 0.076, 0.112, 0.17,
+  0.905, 0.585, 0.062, 0.075, 0.10
+];
+var LOBE_CDF = new Float64Array(LOBES.length / 5);
+(function () {
+  var acc = 0, i;
+  for (i = 0; i < LOBE_CDF.length; i++) { acc += LOBES[i * 5 + 4]; LOBE_CDF[i] = acc; }
+  for (i = 0; i < LOBE_CDF.length; i++) { LOBE_CDF[i] /= acc; }
+})();
+
+/* --------------------------------------------------------------- wind field
+   W = uniform leftward flow * boundary-layer profile * global gust
+       + curl of a 4-octave stream function.
+
+   Taking the curl of a scalar stream function psi makes the eddy part exactly
+   divergence-free: real swirls, no artificial sources or sinks that would
+   herd leaves into invisible drains. Cost is one cos() per octave.
+
+   Amplitudes are pre-divided by |k| so the resulting VELOCITY spectrum falls
+   off instead of being dominated by the highest octave.
+
+   Each octave's phase is also slowly FREQUENCY-MODULATED. Four pure tones,
+   however irrational their ratios, still come back into near-alignment: this
+   field measured only 21% different from itself at a 40-second lag, which is
+   inside the window where a viewer would notice. Modulating each phase by a
+   slow sine of its own makes the octaves drift instead of march, and the
+   nearest recurrence within 45 s disappears entirely. It is free: the phase
+   depends only on t, not on position, so it is computed once per step rather
+   than once per leaf. */
+var WAVES = new Float64Array([
+  /* kx     ky     omega     phase    ampl (already /|k|) */
+   1.730,  2.310,  0.31700,  0.000,  0.34660,
+   3.910,  2.870, -0.46910,  2.130,  0.09280,
+   6.710,  5.330,  0.73310,  4.370,  0.02567,
+  11.300,  9.130, -1.09370,  1.090,  0.00757
+]);
+var WMOD_DEPTH = new Float64Array([2.60, 2.10, 1.70, 1.30]);      // rad
+var WMOD_RATE  = new Float64Array([0.05310, 0.07730, 0.11170, 0.14290]);
+var WMOD_PHASE = new Float64Array([1.77, 4.03, 0.51, 2.99]);
+var wavePhase  = new Float64Array(4);
+var TURB_NORM = 0.72;   // brings peak curl velocity to ~1 before scaling
+
+function updateWavePhases(t) {
+  for (var i = 0, j = 0; i < 20; i += 5, j++) {
+    wavePhase[j] = WAVES[i + 2] * t + WAVES[i + 3] +
+                   WMOD_DEPTH[j] * Math.sin(WMOD_RATE[j] * t + WMOD_PHASE[j]);
+  }
+}
+
+var windOutX = 0, windOutY = 0;   // module scratch: sampleWind writes here
+
+function groundProfile(v) {
+  /* No-slip boundary layer: the last 15% of the frame is nearly still, which
+     is why a leaf that once sinks that low stops crossing and settles.
+     Measured: raising this floor from 0.07 to 0.13 made the bottom-left
+     corner WORSE (38% of touchdowns in the leftmost tenth, up from 25%),
+     because low leaves then skate further left before they finally sink.
+     Fall lines converge toward the bottom-left no matter what; the lever
+     that actually controls the clump is how fast settled leaves fade. */
+  var d = (1 - v) * 6.6666667;
+  var s = d <= 0 ? 0 : (d >= 1 ? 1 : d * d * (3 - 2 * d));
+  return 0.07 + 0.93 * s * (0.82 + 0.30 * (1 - v));
+}
+
+function gustAt(t) {
+  /* Global unsteadiness — the lulls and surges — range [0.24, 1.00].
+     Six components with periods 47 / 31.6 / 19.8 / 12.6 / 7.8 / 4.9 s. This
+     particular set was chosen by measurement, not by taste: it is the one
+     whose envelope shows no near-recurrence at any lag under 300 s. */
+  return 0.62 + 0.38 * (
+    0.23 * Math.sin(0.13370 * t + 0.67) +
+    0.21 * Math.sin(0.19910 * t + 1.31) +
+    0.19 * Math.sin(0.31730 * t + 4.11) +
+    0.15 * Math.sin(0.49870 * t + 2.23) +
+    0.12 * Math.sin(0.80090 * t + 5.02) +
+    0.10 * Math.sin(1.29310 * t + 3.44));
+}
+
+function sampleWind(u, v, t, meanU, turb) {
+  var cx = 0, cy = 0, i, j, c;
+  for (i = 0, j = 0; i < 20; i += 5, j++) {
+    c = Math.cos(WAVES[i] * u + WAVES[i + 1] * v + wavePhase[j]) * WAVES[i + 4];
+    cx += WAVES[i + 1] * c;    /*  d psi / dv */
+    cy -= WAVES[i] * c;        /* -d psi / du */
+  }
+  var prof = groundProfile(v);
+  var tp = turb * TURB_NORM * prof;
+  windOutX = -meanU * prof * gustNow + cx * tp;
+  windOutY = cy * tp;
+}
+
+/* -------------------------------------------------------------------- prng
+   Deterministic so a page load is reproducible and the test harness can
+   compare runs; seeded per-instance so different seeds give different skies. */
+var rngState = 0x8f1bbcdc;
+function rnd() {
+  rngState = (rngState + 0x6D2B79F5) | 0;
+  var t = rngState;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+function gauss() { return (rnd() + rnd() + rnd() - 1.5) * 2; }   /* ~N(0,1), bounded */
+function rrange(a, b) { return a + (b - a) * rnd(); }
+
+/* ---------------------------------------------------------------- the pool
+   Structure-of-arrays. Allocated exactly once, at module load. Nothing in
+   spawn(), step() or draw() ever allocates. */
+var N = CFG.MAX_LEAVES;
+var ST_FREE = 0, ST_FLY = 1, ST_SETTLE = 2;
+
+var pX      = new Float32Array(N);   // normalised position
+var pY      = new Float32Array(N);
+var pVX     = new Float32Array(N);   // normalised velocity
+var pVY     = new Float32Array(N);
+var pPhi    = new Float32Array(N);   // tumble phase (rad) — drives sprite AND lift
+var pTheta  = new Float32Array(N);   // in-plane draw angle (rad)
+var pK      = new Float32Array(N);   // drag coefficient, already /parallax
+var pG      = new Float32Array(N);   // gravity, already *parallax
+var pLift   = new Float32Array(N);   // lift gain relative to drag
+var pTumbB  = new Float32Array(N);   // tumble rate: base + k*airspeed
+var pTumbK  = new Float32Array(N);
+var pTumbS  = new Float32Array(N);   // +1 / -1
+var pSpin   = new Float32Array(N);   // free in-plane spin (rad/s)
+var pAlignO = new Float32Array(N);   // heading offset (rad)
+var pPar    = new Float32Array(N);   // parallax factor
+var pSize   = new Float32Array(N);   // drawn size, fraction of sqrt(w*h)
+var pAlpha  = new Float32Array(N);
+var pGround = new Float32Array(N);
+var pSettle = new Float32Array(N);   // seconds since touchdown
+var pFadeMul = new Float32Array(N);  // per-leaf scale on the settle fade timing
+var pAge    = new Float32Array(N);
+var pFlip   = new Int8Array(N);
+var pSheet  = new Uint8Array(N);
+var pBand   = new Uint8Array(N);     // 0 far, 1 mid, 2 near (draw order)
+var pState  = new Uint8Array(N);
+
+var freeList = new Int32Array(N), freeCount = N;
+var activeIdx = new Int32Array(N), activeCount = 0;
+var slotAt = new Int32Array(N);      // index of slot i inside activeIdx
+(function () { for (var i = 0; i < N; i++) { freeList[i] = i; pState[i] = ST_FREE; } })();
+updateWavePhases(0);   // so sampleWind is valid before the first step
+
+/* counters (diagnostics, also read by the test harness) */
+var statSpawned = 0, statExitLeft = 0, statExitOther = 0, statLanded = 0, statLandFaded = 0;
+var statAttempt = 0;   // Poisson events fired, including any refused by the cap
+
+/* ------------------------------------------------------------------- state */
+var W = 1, H = 1, DPR = 1, REF = 1;      // pixel geometry
+var simTime = 0;
+var gustNow = 1;
+var intensityTarget = 0.55, intensityEff = 0.55;
+var meanU = 0, turbAmp = 0;
+var spawnAccum = 0, spawnThreshold = 1;
+var running = false, userPaused = false, docHidden = false, reduced = false;
+var rafId = 0, lastTs = 0, acc = 0;
+
+/* ---------------------------------------------------------------- lifecycle */
+function activate(i) { slotAt[i] = activeCount; activeIdx[activeCount++] = i; }
+function deactivate(slot) {
+  var i = activeIdx[slot];
+  var last = activeIdx[--activeCount];
+  activeIdx[slot] = last; slotAt[last] = slot;
+  pState[i] = ST_FREE;
+  freeList[freeCount++] = i;
+}
+
+function spawnLeaf() {
+  if (freeCount === 0 || activeCount >= CFG.SOFT_CAP) return -1;
+  var i = freeList[--freeCount];
+
+  /* --- where it lets go: two canopy candidates, the windier one wins, so
+         detachment follows the gust across the tree instead of being uniform */
+  var bu = 0, bv = 0, bw = 1e9, c, r, a, li, u, v;
+  for (c = 0; c < 2; c++) {
+    r = rnd();
+    for (li = 0; li < LOBE_CDF.length - 1; li++) { if (r < LOBE_CDF[li]) break; }
+    a = rnd() * TWO_PI;
+    r = Math.pow(rnd(), 0.62);
+    u = LOBES[li * 5] + LOBES[li * 5 + 2] * r * Math.cos(a);
+    v = LOBES[li * 5 + 1] + LOBES[li * 5 + 3] * r * Math.sin(a);
+    if (u < 0.720) u = 0.720; else if (u > 1.020) u = 1.020;
+    if (v < 0.060) v = 0.060; else if (v > 0.660) v = 0.660;
+    sampleWind(u, v, simTime, meanU, turbAmp);
+    if (windOutX < bw) { bw = windOutX; bu = u; bv = v; }
+  }
+
+  /* --- depth / parallax. One factor f scales accel, wind, velocity and size
+         coherently, which is what "further away" actually means on screen. */
+  var d = 0.5 * (rnd() + rnd());                 // triangular, mid-biased
+  var par = CFG.PAR_LO + (CFG.PAR_HI - CFG.PAR_LO) * d;
+
+  /* --- the single parameter that decides crosser vs lander:
+         terminal fall speed, i.e. sqrt(g/k) = sqrt(m g / (Cd A)).
+         A dense, small-area leaf falls fast AND couples weakly to the wind. */
+  var vt = CFG.VTERM * Math.exp(CFG.VTERM_SIGMA * gauss());
+  if (vt < CFG.VTERM_LO) vt = CFG.VTERM_LO; else if (vt > CFG.VTERM_HI) vt = CFG.VTERM_HI;
+  var g0 = CFG.GRAV * (1 - CFG.GRAV_JIT * 0.5 + CFG.GRAV_JIT * rnd());
+  var k0 = g0 / (vt * vt);
+
+  pX[i] = bu; pY[i] = bv;
+  /* released, not launched: a small branch-springback kick, then the air does
+     the rest. |v_rel| is large at t=0, which is why leaves spin hard as they
+     are ripped off and then relax into a lazy tumble. */
+  pVX[i] = (-0.05 * rnd() * meanU + 0.012 * gauss()) * par;
+  pVY[i] = (0.010 + 0.020 * gauss()) * par;
+
+  pK[i] = k0 / par;
+  pG[i] = g0 * par;
+  pPar[i] = par;
+  pLift[i] = rrange(CFG.LIFT_LO, CFG.LIFT_HI);
+  pTumbB[i] = rrange(CFG.TUMBLE_BASE_LO, CFG.TUMBLE_BASE_HI);
+  pTumbK[i] = rrange(CFG.TUMBLE_K_LO, CFG.TUMBLE_K_HI);
+  pTumbS[i] = rnd() < 0.5 ? -1 : 1;
+  pSpin[i] = rrange(-1.6, 1.6);
+  pAlignO[i] = gauss() * 0.5;
+  pPhi[i] = rnd() * TWO_PI;
+  pTheta[i] = rnd() * TWO_PI;
+  pSize[i] = CFG.SIZE_FRAC * rrange(CFG.SIZE_VAR_LO, CFG.SIZE_VAR_HI) * par;
+  pAlpha[i] = (0.42 + 0.58 * d) * rrange(0.80, 1.0);
+  pGround[i] = CFG.GROUND_LO + (CFG.GROUND_HI - CFG.GROUND_LO) * d + 0.012 * (rnd() - 0.5);
+  pFlip[i] = rnd() < 0.5 ? -1 : 1;
+  pSheet[i] = (rnd() * 3) | 0;
+  pBand[i] = d < 0.34 ? 0 : (d < 0.67 ? 1 : 2);
+  pFadeMul[i] = 1 + CFG.FADE_JITTER * (rnd() - 0.5);
+  pSettle[i] = 0; pAge[i] = 0;
+  pState[i] = ST_FLY;
+
+  activate(i);
+  statSpawned++;
+  return i;
+}
+
+/* --------------------------------------------------------------- integrator
+   Semi-implicit Euler at a fixed 1/120 s substep. Fixed substeps because
+   quadratic drag with a variable dt is not something to gamble on, and
+   because it makes the whole system reproducible for testing. */
+function step(dt) {
+  simTime += dt;
+  gustNow = gustAt(simTime);
+  updateWavePhases(simTime);
+
+  /* intensity is smoothed here, not at the setter, so nothing can pop */
+  intensityEff += (intensityTarget - intensityEff) * (1 - Math.exp(-dt / CFG.INTENSITY_TAU));
+  var ip = Math.pow(intensityEff, CFG.WIND_EXP);
+  meanU = CFG.WIND_MIN + (CFG.WIND_MAX - CFG.WIND_MIN) * ip;
+  turbAmp = CFG.TURB_MIN + (CFG.TURB_MAX - CFG.TURB_MIN) * intensityEff;
+
+  /* non-homogeneous Poisson detachment: integrate the rate, fire when the
+     integral crosses an Exp(1) draw. No cadence, no rhythm, and a smooth
+     rate change can never produce a spawn burst. */
+  var rate = (CFG.SPAWN_MIN + CFG.SPAWN_MAX * Math.pow(intensityEff, CFG.SPAWN_EXP))
+             * (CFG.SPAWN_GUST_A + CFG.SPAWN_GUST_B * gustNow);
+  spawnAccum += rate * dt;
+  while (spawnAccum >= spawnThreshold) {
+    spawnAccum -= spawnThreshold;
+    spawnThreshold = -Math.log(1 - rnd() * 0.999999);
+    statAttempt++;
+    spawnLeaf();
+  }
+
+  var margin = CFG.EXIT_MARGIN;
+  for (var s = 0; s < activeCount; s++) {
+    var i = activeIdx[s];
+    var par = pPar[i], k = pK[i];
+    var x = pX[i], y = pY[i], vx = pVX[i], vy = pVY[i];
+
+    pAge[i] += dt;
+
+    /* --- wind at this point, this instant, scaled into this leaf's plane */
+    sampleWind(x, y, simTime, meanU, turbAmp);
+    var wx = windOutX * par, wy = windOutY * par;
+
+    /* --- airspeed: the only velocity aerodynamics cares about */
+    var rvx = vx - wx, rvy = vy - wy;
+    var spd = Math.sqrt(rvx * rvx + rvy * rvy);
+
+    /* --- tumble. Rate rises with airspeed (Strouhal-like), so a leaf that is
+           riding the wind (small |v_rel|) tumbles lazily while one just torn
+           off the branch (huge |v_rel|) spins hard. Same phase feeds the
+           sprite frame, so what you see and what you feel are one thing. */
+    var settleMul = 1;
+    if (pState[i] === ST_SETTLE) {
+      settleMul = 1 - pSettle[i] / CFG.SETTLE_CALM;
+      if (settleMul < 0) settleMul = 0;
+    }
+    var om = pTumbS[i] * (pTumbB[i] + pTumbK[i] * spd / par) * settleMul;
+    if (om > CFG.TUMBLE_CAP) om = CFG.TUMBLE_CAP;
+    else if (om < -CFG.TUMBLE_CAP) om = -CFG.TUMBLE_CAP;
+    var phi = pPhi[i] + om * dt;
+    if (phi > 1e6 || phi < -1e6) phi = phi % TWO_PI;   // keep float32 precision
+    pPhi[i] = phi;
+
+    /* --- quasi-steady flat plate. psi is the angle of attack measured from
+           knife-edge; the sprite sheet is knife-edge at phi = pi/2 and 3pi/2
+           and face-on at 0 and pi, so psi = phi - pi/2 lines the two up.
+             normal force  ~ sin(psi)
+             drag  component ~ sin^2(psi)      (max face-on, min edge-on)
+             lift  component ~ sin(psi)cos(psi) (zero at both, flips 4x/turn) */
+    var psi = phi - HALF_PI;
+    var sa = Math.sin(psi), ca = Math.cos(psi);
+    var cd = CD_A + CD_B * sa * sa;
+    var cl = pLift[i] * 2 * sa * ca * settleMul;
+
+    var kd = k * spd;
+    var ax = -kd * cd * rvx + kd * cl * (-rvy);
+    var ay = -kd * cd * rvy + kd * cl * (rvx) + pG[i];
+
+    vx += ax * dt; vy += ay * dt;
+    x += vx * dt;  y += vy * dt;
+
+    /* --- in-plane orientation: partly trails the airflow, partly free spin.
+           At high airspeed the leaf streaks along its path; when it is barely
+           moving relative to the air it just drifts around. */
+    var align = spd / (spd + CFG.ALIGN_REF);
+    var want = Math.atan2(rvy, rvx) + pAlignO[i];
+    var dA = want - pTheta[i];
+    dA -= TWO_PI * Math.floor((dA + Math.PI) * INV_TWO_PI);
+    var f = CFG.ALIGN_RATE * align * dt;
+    if (f > 1) f = 1;
+    pTheta[i] += dA * f + pSpin[i] * (1 - 0.85 * align) * dt;
+
+    /* --- ground contact. Emergent: nothing decides in advance that this leaf
+           lands. It lands because it lost the wind. */
+    var gy = pGround[i];
+    if (y >= gy) {
+      y = gy;
+      if (vy > 0) vy = -vy * CFG.BOUNCE;
+      vx *= Math.exp(-CFG.GROUND_FRIC * 12 * dt);
+      if (pState[i] === ST_FLY) { pState[i] = ST_SETTLE; statLanded++; }
+    }
+    if (pState[i] === ST_SETTLE) pSettle[i] += dt;
+
+    pX[i] = x; pY[i] = y; pVX[i] = vx; pVY[i] = vy;
+
+    /* --- recycle */
+    var dead = 0;
+    if (x < -margin) { statExitLeft++; dead = 1; }
+    else if (x > 1 + margin || y < -margin || y > 1 + margin) { statExitOther++; dead = 1; }
+    else if (pState[i] === ST_SETTLE &&
+             pSettle[i] > (CFG.FADE_DELAY + CFG.FADE_DUR) * pFadeMul[i]) {
+      statLandFaded++; dead = 1;
+    } else if (!(x === x) || !(y === y)) { dead = 1; }   // NaN guard, belt & braces
+    if (dead) { deactivate(s); s--; }
+  }
+}
+
+/* -------------------------------------------------------------------- sheets
+   The three sheets are downscaled once into an atlas sized for the current
+   viewport. Drawing a 256px cell into a 45px box every frame is both slower
+   and uglier than drawing a pre-filtered 64px cell. */
+var SHEET_SRC = [
+  'momiji_leaf_sheet_ember.png',
+  'momiji_leaf_sheet_crimson.png',
+  'momiji_leaf_sheet_amber.png'
+];
+var sheets = [null, null, null];       // HTMLImageElement
+var atlas = [null, null, null];        // downscaled canvas (or the image itself)
+var atlasCell = 128;
+var atlasBuiltFor = -1;                // number of sheets present at last build
+var sheetsLoaded = 0;
+
+function loadSheets() {
+  for (var i = 0; i < 3; i++) {
+    (function (idx) {
+      var img = new Image();
+      img.onload = function () {
+        sheets[idx] = img; atlas[idx] = img; sheetsLoaded++;
+        buildAtlas();
+        if (reduced) drawStatic();
+      };
+      img.onerror = function () { sheetsLoaded++; };
+      img.src = SHEET_SRC[idx];
+    })(i);
+  }
+}
+
+function buildAtlas() {
+  /* target cell = 1.35x the largest leaf we will ever draw, power of two */
+  var maxLeafPx = CFG.SIZE_FRAC * CFG.SIZE_VAR_HI * CFG.PAR_HI * REF * DPR * 1.35;
+  var cell = 64;
+  while (cell < maxLeafPx && cell < 256) cell *= 2;
+  if (cell === atlasCell && atlasBuiltFor === sheetsLoaded) return;
+  for (var i = 0; i < 3; i++) {
+    if (!sheets[i]) continue;
+    if (cell >= 256) { atlas[i] = sheets[i]; continue; }
+    try {
+      var cv = document.createElement('canvas');
+      cv.width = cell * 4; cv.height = cell * 4;
+      var c2 = cv.getContext('2d');
+      if (!c2) { atlas[i] = sheets[i]; continue; }
+      c2.imageSmoothingEnabled = true;
+      if ('imageSmoothingQuality' in c2) c2.imageSmoothingQuality = 'high';
+      /* two-step downscale keeps the serrated leaf edge from disintegrating */
+      var mid = cell * 8;
+      if (mid < 1024) {
+        var tmp = document.createElement('canvas');
+        tmp.width = mid; tmp.height = mid;
+        var t2 = tmp.getContext('2d');
+        t2.imageSmoothingEnabled = true;
+        if ('imageSmoothingQuality' in t2) t2.imageSmoothingQuality = 'high';
+        t2.drawImage(sheets[i], 0, 0, mid, mid);
+        c2.drawImage(tmp, 0, 0, cell * 4, cell * 4);
+      } else {
+        c2.drawImage(sheets[i], 0, 0, cell * 4, cell * 4);
+      }
+      atlas[i] = cv;
+    } catch (e) { atlas[i] = sheets[i]; }
+  }
+  atlasCell = cell;
+  atlasBuiltFor = sheetsLoaded;
+}
+
+/* --------------------------------------------------------------------- draw */
+var canvas = document.getElementById('leaf-canvas');
+var ctx = canvas ? canvas.getContext('2d') : null;
+var showTree = true;
+
+function resize() {
+  var w = window.innerWidth || 1280, h = window.innerHeight || 800;
+  DPR = Math.min(window.devicePixelRatio || 1, CFG.DPR_CAP);
+  W = w; H = h; REF = Math.sqrt(w * h);
+  if (canvas) {
+    canvas.width = Math.round(w * DPR);
+    canvas.height = Math.round(h * DPR);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+  }
+  if (ctx) {
+    ctx.imageSmoothingEnabled = true;
+    if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+  }
+  buildAtlas();
+  if (elVp) elVp.textContent = W + '×' + H + ' @' + DPR;
+  if (reduced) drawStatic();
+}
+
+function drawTree() {
+  /* SCAFFOLDING. Placeholder so the emission origin is visually verifiable.
+     Delete this function at integration. */
+  if (!showTree) return;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = 'rgba(255,232,205,0.055)';
+  for (var i = 0; i < LOBE_CDF.length; i++) {
+    ctx.beginPath();
+    ctx.ellipse(LOBES[i * 5] * W, LOBES[i * 5 + 1] * H,
+                LOBES[i * 5 + 2] * W * 1.25, LOBES[i * 5 + 3] * H * 1.25, 0, 0, TWO_PI);
+    ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(255,232,205,0.10)';
+  ctx.lineWidth = Math.max(2, 0.010 * W);
+  ctx.beginPath();
+  ctx.moveTo(0.945 * W, 1.00 * H);
+  ctx.quadraticCurveTo(0.925 * W, 0.72 * H, 0.892 * W, 0.40 * H);
+  ctx.stroke();
+  ctx.lineWidth = Math.max(1, 0.004 * W);
+  ctx.beginPath();
+  ctx.moveTo(0.918 * W, 0.62 * H); ctx.lineTo(0.812 * W, 0.34 * H);
+  ctx.moveTo(0.905 * W, 0.50 * H); ctx.lineTo(0.975 * W, 0.40 * H);
+  ctx.moveTo(0.898 * W, 0.44 * H); ctx.lineTo(0.860 * W, 0.20 * H);
+  ctx.stroke();
+  /* ground reference line, so landings are verifiable */
+  ctx.strokeStyle = 'rgba(255,232,205,0.055)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, CFG.GROUND_HI * H); ctx.lineTo(W, CFG.GROUND_HI * H);
+  ctx.stroke();
+}
+
+function drawLeaves() {
+  var cell = atlasCell || 256;
+  var inset = cell >= 256 ? 1 : 0.5;
+  var src = cell - inset * 2;
+  for (var band = 0; band < 3; band++) {
+    for (var s = 0; s < activeCount; s++) {
+      var i = activeIdx[s];
+      if (pBand[i] !== band) continue;
+      var img = atlas[pSheet[i]];
+      if (!img) continue;
+
+      var a = pAlpha[i];
+      if (pState[i] === ST_SETTLE) {
+        var fm = pFadeMul[i];
+        var ft = pSettle[i] - CFG.FADE_DELAY * fm;
+        if (ft > 0) {
+          var u = 1 - ft / (CFG.FADE_DUR * fm);
+          if (u <= 0) continue;
+          a *= u * u * (3 - 2 * u);
+        }
+      }
+      if (a <= 0.004) continue;
+
+      var f = pPhi[i] * INV_TWO_PI;
+      f -= Math.floor(f);
+      var fi = (f * 16) | 0; if (fi > 15) fi = 15;
+
+      var sz = pSize[i] * REF;
+      var half = sz * 0.5;
+      var th = pTheta[i];
+      var co = Math.cos(th), si = Math.sin(th), fl = pFlip[i];
+
+      ctx.globalAlpha = a;
+      ctx.setTransform(co * fl * DPR, si * fl * DPR, -si * DPR, co * DPR,
+                       pX[i] * W * DPR, pY[i] * H * DPR);
+      ctx.drawImage(img,
+        (fi & 3) * cell + inset, (fi >> 2) * cell + inset, src, src,
+        -half, -half, sz, sz);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+function render() {
+  if (!ctx) return;
+  /* Clear only — no background fill. The canvas stays transparent so that at
+     integration it can sit above Fuji and the portrait with the leaves in
+     front of everything; here the #0c0c0c on <body> shows through and the
+     result is identical, minus one full-screen fill per frame. */
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawTree();
+  drawLeaves();
+}
+
+function drawStatic() {
+  /* prefers-reduced-motion: a still frame, no rAF, ever. */
+  if (!ctx) return;
+  while (activeCount > 0) deactivate(0);
+  simTime = 0; gustNow = 1; meanU = 0.30; turbAmp = 0.08;
+  for (var n = 0; n < 9; n++) {
+    var i = spawnLeaf();
+    if (i < 0) break;
+    /* place them along plausible drift lines instead of on the branch */
+    var t = (n + 0.5) / 9;
+    pX[i] = 0.90 - 0.86 * Math.pow(t, 0.85) + 0.03 * gauss();
+    pY[i] = pY[i] + (0.72 - pY[i]) * t * (0.35 + 0.5 * rnd());
+    pPhi[i] = rnd() * TWO_PI;
+    pTheta[i] = rnd() * TWO_PI;
+  }
+  render();
+}
+
+/* --------------------------------------------------------------- frame loop */
+var fpsEma = 60, fpsAcc = 0;
+
+function frame(ts) {
+  rafId = window.requestAnimationFrame(frame);
+  var raw = (ts - lastTs) / 1000;
+  lastTs = ts;
+  if (!(raw > 0)) raw = 0;
+  if (raw > CFG.MAX_FRAME_DT) raw = CFG.MAX_FRAME_DT;   // no teleporting
+
+  fpsEma += ((raw > 0.0005 ? 1 / raw : 60) - fpsEma) * 0.08;
+
+  acc += raw;
+  var n = 0;
+  while (acc >= CFG.FIXED_DT && n < CFG.MAX_SUBSTEPS) { step(CFG.FIXED_DT); acc -= CFG.FIXED_DT; n++; }
+  if (n === CFG.MAX_SUBSTEPS) acc = 0;
+
+  render();
+
+  fpsAcc += raw;
+  if (fpsAcc > 0.2) { fpsAcc = 0; updatePanel(); }
+}
+
+function start() {
+  if (running || reduced || userPaused || docHidden) return;
+  running = true;
+  lastTs = (window.performance && window.performance.now) ? window.performance.now() : Date.now();
+  acc = 0;
+  rafId = window.requestAnimationFrame(frame);
+}
+function stop() {
+  if (!running) return;
+  running = false;
+  if (rafId) window.cancelAnimationFrame(rafId);
+  rafId = 0;
+}
+
+/* --------------------------------------------------------------- environment */
+function applyReduced(isReduced) {
+  reduced = !!isReduced;
+  if (reduced) { stop(); drawStatic(); }
+  else { start(); }
+}
+
+var mq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+if (mq) {
+  reduced = !!mq.matches;                    // read now, act at boot
+  if (mq.addEventListener) mq.addEventListener('change', function (e) { applyReduced(e.matches); });
+  else if (mq.addListener) mq.addListener(function (e) { applyReduced(e.matches); });
+}
+
+document.addEventListener('visibilitychange', function () {
+  docHidden = !!document.hidden;
+  if (docHidden) stop();
+  else start();                       // start() resets lastTs -> no time jump
+});
+window.addEventListener('resize', resize);
+if (window.addEventListener) window.addEventListener('orientationchange', resize);
+
+/* -------------------------------------------------------------- public API */
+window.leafSystem = {
+  /**
+   * Set the wind intensity.
+   * @param {number} v  0 = bare trickle (still alive), 1 = strong gust.
+   *                    Values a little above 1 are supported; clamped at 1.6.
+   * @param {boolean} [immediate=false]  skip the smoothing ramp (tests only).
+   * The value is a TARGET. The system eases toward it with a ~0.85 s time
+   * constant, and both the wind speed and the Poisson detachment rate follow
+   * that eased value, so no call to this function can ever pop or burst.
+   */
+  setIntensity: function (v, immediate) {
+    v = +v;
+    if (!(v >= 0)) v = 0;
+    if (v > 1.6) v = 1.6;
+    intensityTarget = v;
+    if (immediate) intensityEff = v;
+  },
+  /** @returns {number} the target intensity most recently set. */
+  getIntensity: function () { return intensityTarget; },
+  /** @returns {number} the eased value actually driving the wind right now. */
+  getEffectiveIntensity: function () { return intensityEff; },
+  /** Stop the rAF loop. Idempotent. */
+  pause: function () { userPaused = true; stop(); },
+  /** Restart the loop with no time jump. Idempotent; no-op under reduced motion. */
+  resume: function () { userPaused = false; start(); },
+  /** @returns {number} leaves currently alive (airborne + settling). */
+  count: function () { return activeCount; },
+
+  /* test-only surface, not part of the integration contract */
+  _internals: {
+    cfg: CFG,
+    arrays: { x: pX, y: pY, vx: pVX, vy: pVY, phi: pPhi, theta: pTheta,
+              size: pSize, alpha: pAlpha, age: pAge, settle: pSettle,
+              band: pBand, state: pState },
+    geom: function () { return { W: W, H: H, DPR: DPR, REF: REF }; },
+    seed: function (s) { rngState = s | 0; },
+    stats: function () {
+      return { spawned: statSpawned, attempts: statAttempt,
+               exitLeft: statExitLeft, exitOther: statExitOther,
+               landed: statLanded, landFaded: statLandFaded,
+               active: activeCount, free: freeCount, pool: N, simTime: simTime,
+               meanU: meanU, turb: turbAmp, gust: gustNow };
+    },
+    step: step,
+    poolSize: function () { return N; },
+    isRunning: function () { return running; }
+  }
+};
+
+/* ---------------------------------------------------------- dev panel only */
+var elInt = document.getElementById('intensity');
+var elVInt = document.getElementById('v-int');
+var elFps = document.getElementById('v-fps');
+var elCount = document.getElementById('v-count');
+var elVp = document.getElementById('v-vp');
+var elNote = document.getElementById('v-note');
+
+function updatePanel() {
+  if (elFps) elFps.textContent = fpsEma.toFixed(0);
+  if (elCount) elCount.textContent = activeCount;
+}
+function setFromPanel(v) {
+  window.leafSystem.setIntensity(v);
+  if (elInt) elInt.value = v;
+  if (elVInt) elVInt.textContent = (+v).toFixed(2);
+}
+if (elInt && elInt.addEventListener) {
+  elInt.addEventListener('input', function () { setFromPanel(elInt.value); });
+}
+function bind(id, fn) {
+  var el = document.getElementById(id);
+  if (el && el.addEventListener) el.addEventListener('click', fn);
+}
+bind('b-0', function () { setFromPanel(0); });
+bind('b-35', function () { setFromPanel(0.35); });
+bind('b-1', function () { setFromPanel(1); });
+bind('b-12', function () { setFromPanel(1.2); });
+bind('b-pause', function () {
+  if (running) { window.leafSystem.pause(); this.textContent = 'resume'; }
+  else { window.leafSystem.resume(); this.textContent = 'pause'; }
+});
+bind('b-tree', function () { showTree = !showTree; });
+
+/* --------------------------------------------------------------------- boot */
+docHidden = !!document.hidden;
+loadSheets();
+resize();
+if (elNote) {
+  elNote.textContent = reduced
+    ? 'prefers-reduced-motion: static frame, rAF never started.'
+    : 'window.leafSystem.setIntensity(0..1.2)';
+}
+if (reduced) drawStatic(); else start();
+
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>momiji leaf system — hybrid</title>
+<style>
+  html,body{margin:0;height:100%;background:#0c0c0c;overflow:hidden}
+  /* #scaffold is the stand-in for the real hero art (tree / Fuji / portrait).
+     It is painted once per resize. #stage is TRANSPARENT and holds only the
+     leaves, so they composite over whatever ends up behind them. */
+  #scaffold,#stage{position:fixed;inset:0;display:block;width:100%;height:100%}
+  #stage{z-index:2}
+  #scaffold{z-index:1}
+  #panel{
+    position:fixed;left:14px;bottom:14px;z-index:10;
+    font:11px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;
+    color:#8d8580;background:rgba(18,16,15,.72);
+    border:1px solid rgba(190,110,60,.18);border-radius:8px;
+    padding:10px 12px;backdrop-filter:blur(6px);user-select:none;
+    min-width:186px;
+  }
+  #panel b{color:#d98a4e;font-weight:500}
+  #panel .row{display:flex;justify-content:space-between;gap:14px}
+  #slider{width:100%;margin:7px 0 4px;accent-color:#c9773f;display:block}
+  #err{position:fixed;inset:0;display:none;place-items:center;color:#a33;font:13px monospace;text-align:center;padding:20px}
+</style>
+</head>
+<body>
+<canvas id="scaffold"></canvas>
+<canvas id="stage"></canvas>
+<div id="err"></div>
+<div id="panel">
+  <div class="row"><span>intensity</span><b id="ival">0.55</b></div>
+  <input id="slider" type="range" min="0" max="1.2" step="0.01" value="0.55">
+  <div class="row"><span>fps</span><b id="fps">--</b></div>
+  <div class="row"><span>frame cost</span><b id="ms">--</b></div>
+  <div class="row"><span>live leaves</span><b id="cnt">0</b></div>
+</div>
+
+<script>
+"use strict";
+(function () {
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOMIJI LEAF SYSTEM — canvas 2D, pooled, zero per-frame allocation.
+
+   COORDINATE MODEL
+   Positions are NORMALISED: x,y are fractions of viewport width/height.
+   Velocities are anisotropic: vx in widths/second, vy in heights/second.
+   Consequence: the ratio that decides "does this leaf cross the frame or hit
+   the ground" is aspect-independent, so the *character* of the animation is
+   identical at 390px and 2560px. Resize is also free — nothing to rescale.
+
+   DEPTH
+   Every leaf has z in [0,1]. z drives scale, speed, opacity AND which of three
+   pre-baked sprite tiers it samples (full-res / half-res+blur+cool wash /
+   quarter-res+blur+stronger wash). Aerial perspective therefore costs nothing
+   at runtime — it was paid once at load.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+var TAU = Math.PI * 2;
+
+var C = {
+  POOL: 460,                       // hard ceiling on simultaneous leaves
+
+  /* emission — canopy ellipse, in viewport fractions */
+  ecx: 0.878, ecy: 0.355,          // centre
+  erx: 0.128, ery: 0.265,          // radii  => x[0.75,1.01]  y[0.09,0.62]
+  rimBias: 0.45,                   // radius = rand^this. 0.5 = uniform over the
+                                   // ellipse; lower = rim-weighted (wind strips
+                                   // the exposed perimeter first).
+  lowBranch: 0.14,                 // fraction spawning from a lower bough
+
+  /* emission rate (leaves/sec at a 1200px reference viewport) */
+  rateMin: 1.3, rateMax: 46, ratePow: 1.35,
+  tau: 0.55,                       // intensity smoothing time constant (s)
+
+  /* wind — widths/sec, negative = leftward */
+  windMin: 0.070, windMax: 0.300,
+  ax: 2.40,                        // how fast a leaf matches the wind (1/s)
+
+  /* fall — heights/sec */
+  sinkMin: 0.012, sinkSpan: 0.420, sinkPow: 2.60,
+  liftMax: 0.150,                  // initial updraft, decays away
+  ay: 1.80,                        // approach to terminal velocity (1/s)
+
+  /* depth ramps  [far, near] */
+  zk0: 0.34, zk1: 1.18,            // scale
+  zs0: 0.42, zs1: 1.65,            // speed
+  za0: 0.26, za1: 0.95,            // opacity
+
+  size: 0.055,                     // base leaf size, fraction of size unit
+  stretch: 0.00040,                // screen-space smear per px/s of vx
+  fadeT: 1.80                      // settled-leaf fade duration (s)
+};
+
+var SHEETS = ["momiji_leaf_sheet_ember.png",
+              "momiji_leaf_sheet_crimson.png",
+              "momiji_leaf_sheet_amber.png"];
+
+/* ── DOM / canvas ────────────────────────────────────────────────────────── */
+var cv  = document.getElementById("stage");
+var ctx = cv.getContext("2d");                    // transparent: leaves only
+var elI = document.getElementById("ival"), elF = document.getElementById("fps"),
+    elM = document.getElementById("ms"),   elC = document.getElementById("cnt"),
+    elS = document.getElementById("slider"), elE = document.getElementById("err");
+
+var DPR = 1, W = 0, H = 0, cw = 0, ch = 0, SU = 1, viewF = 1;
+var treeCv = document.getElementById("scaffold");
+
+var reduce = false;
+try { reduce = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches); } catch (e) {}
+
+/* ── particle pool — allocated exactly once ──────────────────────────────── */
+var POOL = C.POOL, P = new Array(POOL);
+for (var i = 0; i < POOL; i++) {
+  P[i] = { st:0, x:0, y:0, z:0, vx:0, vy:0, sink:0, lift:0, ltau:1, drag:1,
+           zs:1, k:0, a:1, tier:0, sheet:0, ph:0, phv:1, wf:0, wo:0,
+           fax:0, fay:0, rot:0, rot0:0, prec:0, tilt:0, fr:0, spin:1,
+           gy:1, tb:0, t0:0, hold:0, rock:0, restRot:0, frRest:0,
+           flat:1, fade:1 };
+}
+var freeS = new Int32Array(POOL), freeTop = POOL;
+for (i = 0; i < POOL; i++) freeS[i] = i;
+
+/* draw buckets: 3 depth tiers x 3 sheets. Gives painter's-order depth AND
+   texture batching without ever sorting. */
+var bk = new Int32Array(9 * POOL), bn = new Int32Array(9);
+
+/* ── runtime state ───────────────────────────────────────────────────────── */
+var I = 0.55, Itarget = 0.55, acc = 0, wind = 0, gust = 1;
+var live = 0, landed = 0;
+var TIER = [[null,null,null],[null,null,null],[null,null,null]];
+var CELL = [256, 128, 64];
+var ready = false, running = false, raf = 0, last = 0, clock = 0;
+
+/* telemetry — a preallocated ring of exit events, for verification */
+var EX = new Float32Array(512 * 3), exW = 0, exN = 0;
+var stat = { spawned:0, freed:0, exitLeft:0, exitBottom:0, exitOther:0, landedTotal:0 };
+
+/* ═══════════════════ SPAWN ═══════════════════════════════════════════════ */
+function spawn(t) {
+  if (freeTop === 0) return;                      // pool exhausted: skip, never grow
+  var p = P[freeS[--freeTop]], R = Math.random;
+
+  var a = R() * TAU, r = Math.pow(R(), C.rimBias);
+  p.x = C.ecx + Math.cos(a) * r * C.erx;
+  p.y = C.ecy + Math.sin(a) * r * C.ery;
+  if (R() < C.lowBranch) { p.x = 0.820 + R() * 0.115; p.y = 0.500 + R() * 0.130; }
+
+  var z = R(); p.z = z;
+  p.zs   = C.zs0 + (C.zs1 - C.zs0) * z;
+  p.k    = C.size * (C.zk0 + (C.zk1 - C.zk0) * Math.pow(z, 1.25)) * (0.78 + R() * 0.50);
+  p.a    = C.za0 + (C.za1 - C.za0) * z;
+  p.tier = z < 0.34 ? 2 : (z < 0.68 ? 1 : 0);
+
+  var c = R();                                    // ember-dominant palette
+  p.sheet = c < 0.44 ? 0 : (c < 0.80 ? 2 : 1);
+
+  p.drag = 0.62 + R() * 0.95;                     // personal wind coupling
+  p.sink = C.sinkMin + Math.pow(R(), C.sinkPow) * C.sinkSpan;
+  p.lift = R() * C.liftMax;                       // updraft it will lose
+  p.ltau = 0.80 + R() * 2.80;
+  p.vx   = -0.010 * R();
+  p.vy   =  0.010 + R() * 0.030;
+
+  p.ph = R() * TAU;  p.phv = 1.70 + R() * 3.60;   // flutter
+  p.wf = 0.15 + R() * 0.32;  p.wo = R() * TAU;    // ...whose rate itself wanders
+  p.fax = 0.010 + R() * 0.048;
+  p.fay = 0.016 + R() * 0.080;
+
+  p.rot0 = R() * TAU;  p.prec = (R() - 0.5) * 1.40;
+  p.tilt = 0.18 + R() * 0.42;
+  p.fr   = R() * 16;   p.spin = (R() < 0.5 ? -1 : 1) * (0.65 + R() * 0.80);
+
+  p.gy = 0.925 + z * 0.055 + R() * 0.016;         // near leaves land lower
+  p.tb = t;  p.flat = 1;  p.fade = 1;  p.st = 1;
+  live++; stat.spawned++;
+}
+
+function land(p, t) {
+  p.st = 2; p.t0 = t; p.y = p.gy; p.vy = 0; p.vx *= 0.12;
+  p.restRot = p.rot0 + (Math.random() - 0.5) * 0.50;
+  p.rock = 7 + Math.random() * 6;
+  p.hold = (2.2 + Math.random() * 3.4) * (landed > 55 ? 0.35 : 1);
+  var f = p.fr;                                   // settle onto a flat-face frame
+  p.frRest = f < 3.5 ? 0 : (f < 7.5 ? 7 : (f < 11.5 ? 8 : 15));
+  landed++; stat.landedTotal++;
+}
+
+function recycle(idx, mode) {
+  var p = P[idx];
+  EX[exW] = p.x; EX[exW+1] = p.y; EX[exW+2] = mode;
+  exW = (exW + 3) % EX.length; if (exN < 512) exN++;
+  if (p.st === 2) landed--;
+  p.st = 0; freeS[freeTop++] = idx; live--; stat.freed++;
+  if (mode === 0) stat.exitLeft++; else if (mode === 1) stat.exitBottom++; else stat.exitOther++;
+}
+
+/* ═══════════════════ UPDATE ══════════════════════════════════════════════ */
+function update(dt, t) {
+  /* intensity is always approached exponentially — setIntensity can never pop */
+  I += (Itarget - I) * (1 - Math.exp(-dt / C.tau));
+
+  /* Gust envelope: four sines with periods 149 / 66 / 39 / 10.4 s. These were
+     picked by an FFT search over the autocorrelation of the FINAL signal --
+     including the nonlinear term below, which half-wave-rectifies and squares
+     g and so manufactures harmonics and difference frequencies that a
+     sum-of-sines analysis does not see. Measured: decorrelates by ~16 s and
+     does not return above r=0.6 for at least 320 s at any intensity.
+     (A hand-picked triple recurred at r=0.96 after 73 s; optimising the
+     linearised signal still recurred at 85 s.) */
+  var g = 0.337 * Math.sin(t * 0.0422)
+        + 0.249 * Math.sin(t * 0.0950 + 1.7)
+        + 0.208 * Math.sin(t * 0.1596 + 4.1)
+        + 0.100 * Math.sin(t * 0.6057 + 2.6);
+  gust = 1 + 0.50 * g + 0.55 * I * (g > 0 ? g * g : 0);   // gusts bite harder when strong
+  wind = -(C.windMin + (C.windMax - C.windMin) * I) * gust;
+
+  /* fractional accumulator: rate changes continuously, so does the spawn stream */
+  acc += (C.rateMin + (C.rateMax - C.rateMin) * Math.pow(I, C.ratePow)) * viewF * gust * dt;
+  while (acc >= 1) { acc -= 1; spawn(t); }
+
+  for (var i = 0; i < POOL; i++) {
+    var p = P[i];
+    if (p.st === 0) continue;
+
+    if (p.st === 1) {                                   /* ── airborne ── */
+      p.ph += p.phv * (1 + 0.40 * Math.sin(t * p.wf + p.wo)) * dt;
+      var s = Math.sin(p.ph), co = Math.cos(p.ph);
+
+      p.lift *= Math.exp(-dt / p.ltau);                 // the updraft dies
+      p.vx += (wind * p.drag * p.zs - p.vx) * C.ax * dt;
+      p.vy += ((p.sink - p.lift) * p.zs - p.vy) * C.ay * dt;
+
+      p.x += (p.vx + p.fax * s * p.zs) * dt;
+      p.y += (p.vy + p.fay * 2 * s * co * p.zs) * dt;   // bob at 2x swing rate
+
+      p.rot0 += p.prec * dt;
+      p.rot   = p.rot0 + s * p.tilt;
+      p.fr   += p.spin * (2 + 26 * (Math.abs(p.vx) + 0.8 * Math.abs(p.vy))) * dt;
+      if (p.fr >= 16) p.fr -= 16; else if (p.fr < 0) p.fr += 16;
+
+      if (p.y >= p.gy)      land(p, t);
+      else if (p.x < -0.09) recycle(i, 0);
+      else if (p.y > 1.12)  recycle(i, 1);
+      else if (p.x > 1.14 || p.y < -0.20) recycle(i, 2);
+
+    } else {                                            /* ── settled ── */
+      var age = t - p.t0;
+      p.x  += p.vx * dt;  p.vx *= Math.exp(-5.5 * dt);  // brief skid
+      p.rot = p.restRot + Math.sin(age * p.rock) * 0.42 * Math.exp(-age * 2.6);
+      p.flat += (0.62 - p.flat) * Math.min(1, 4 * dt);  // foreshorten: lying down
+      p.fr  += (p.frRest - p.fr) * Math.min(1, 5 * dt);
+      var d = age - p.hold;
+      p.fade = d <= 0 ? 1 : 1 - d / C.fadeT;
+      if (p.fade <= 0) recycle(i, 1);
+    }
+  }
+}
+
+/* ═══════════════════ DRAW ════════════════════════════════════════════════ */
+function draw() {
+  /* One full-surface clear per frame and nothing else: the background and the
+     scaffolding live on their own layer. Painting them here cost a full-screen
+     opaque fill PLUS a full-screen alpha blit -- 16.6 Mpx at 3840x2160 before
+     a single leaf, which alone pushed a 2560x1440 retina viewport to ~45 fps. */
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.clearRect(0, 0, cw, ch);
+  if (!ready) return;
+
+  for (var b = 0; b < 9; b++) bn[b] = 0;
+  for (var i = 0; i < POOL; i++) {
+    var q = P[i]; if (q.st === 0) continue;
+    var t2 = q.tier * 3 + q.sheet;
+    bk[t2 * POOL + bn[t2]++] = i;
+  }
+
+  for (var ti = 2; ti >= 0; ti--) {                 // far tier first = depth order
+    var cs = CELL[ti];
+    for (var sh = 0; sh < 3; sh++) {
+      var bb = ti * 3 + sh, n = bn[bb];
+      if (!n) continue;
+      var img = TIER[sh][ti];
+      for (var j = 0; j < n; j++) {
+        var p = P[bk[bb * POOL + j]];
+        var cell = p.fr | 0;
+        var k = p.k * SU * DPR, kh = k * 0.5;
+
+        /* screen-space horizontal smear on fast near leaves — free, it rides
+           in the transform we were going to set anyway */
+        var st = Math.abs(p.vx) * W * C.stretch;
+        if (st > 0.42) st = 0.42;
+        var sx = 1 + st * p.z, fy = p.st === 2 ? p.flat : 1;
+
+        var c = Math.cos(p.rot), s = Math.sin(p.rot);
+        ctx.setTransform(sx * c, fy * s, -sx * s, fy * c, p.x * cw, p.y * ch);
+        ctx.globalAlpha = p.a * p.fade * (p.st === 2 ? 0.80 : 1)
+                        * (p.tb ? Math.min(1, (clock - p.tb) * 3) : 1);
+        ctx.drawImage(img, (cell & 3) * cs, (cell >> 2) * cs, cs, cs, -kh, -kh, k, k);
+      }
+    }
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+}
+
+/* ═══════════════════ ASSET PREP ══════════════════════════════════════════ */
+/* Bake three depth tiers per sheet. Far tiers are downsampled, blurred and
+   washed cool — aerial perspective with zero per-frame cost. */
+function bakeTier(img, size, blur, wash) {
+  var c = document.createElement("canvas");
+  c.width = c.height = size;
+  var g = c.getContext("2d");
+  if (blur) g.filter = "blur(" + blur + "px)";
+  g.drawImage(img, 0, 0, size, size);
+  g.filter = "none";
+  if (wash) {
+    g.globalCompositeOperation = "source-atop";
+    g.globalAlpha = wash;
+    g.fillStyle = "#46566e";
+    g.fillRect(0, 0, size, size);
+  }
+  return c;
+}
+
+function loadSheets(done) {
+  var got = 0, imgs = [];
+  for (var i = 0; i < 3; i++) (function (n) {
+    var im = new Image();
+    im.onload = function () {
+      imgs[n] = im;
+      TIER[n][0] = im;
+      TIER[n][1] = bakeTier(im, 512, 0.9, 0.14);
+      TIER[n][2] = bakeTier(im, 256, 0.8, 0.32);
+      if (++got === 3) { ready = true; done(); }
+    };
+    im.onerror = function () {
+      elE.style.display = "grid";
+      elE.textContent = "Could not load " + SHEETS[n] +
+        " — keep the three PNGs in the same folder as demo.html.";
+    };
+    im.src = SHEETS[n];
+  })(i);
+}
+
+/* ═══════════════════ LAYOUT ══════════════════════════════════════════════ */
+function bakeTree() {
+  treeCv.width = cw; treeCv.height = ch;
+  treeCv.style.width = W + "px"; treeCv.style.height = H + "px";
+  var g = treeCv.getContext("2d");
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, cw, ch);
+  /* Scaffolding, not art. It is deliberately lifted well off #0c0c0c so the
+     emission origin is actually verifiable on a dark screen — the real tree
+     replaces all of this. */
+  g.fillStyle = "rgba(150,58,26,0.10)";            // canopy mass
+  g.beginPath();
+  g.ellipse(C.ecx * cw, C.ecy * ch, C.erx * cw, C.ery * ch, 0, 0, TAU);
+  g.fill();
+  g.strokeStyle = "rgba(226,132,72,0.55)";         // exact emission ellipse
+  g.lineWidth = Math.max(1, DPR);
+  if (g.setLineDash) g.setLineDash([6 * DPR, 6 * DPR]);
+  g.stroke();
+  if (g.setLineDash) g.setLineDash([]);
+
+  g.fillStyle = "rgba(78,58,48,0.95)";             // trunk + two boughs
+  g.beginPath();
+  g.moveTo(0.972 * cw, ch);       g.lineTo(0.948 * cw, 0.62 * ch);
+  g.lineTo(0.893 * cw, 0.40 * ch);g.lineTo(0.868 * cw, 0.30 * ch);
+  g.lineTo(0.886 * cw, 0.29 * ch);g.lineTo(0.912 * cw, 0.39 * ch);
+  g.lineTo(0.962 * cw, 0.61 * ch);g.lineTo(1.00 * cw, ch);
+  g.closePath(); g.fill();
+  g.beginPath();
+  g.moveTo(0.946 * cw, 0.60 * ch);g.lineTo(0.806 * cw, 0.47 * ch);
+  g.lineTo(0.804 * cw, 0.492 * ch);g.lineTo(0.950 * cw, 0.625 * ch);
+  g.closePath(); g.fill();
+  g.beginPath();
+  g.moveTo(0.928 * cw, 0.47 * ch); g.lineTo(0.836 * cw, 0.235 * ch);
+  g.lineTo(0.850 * cw, 0.228 * ch);g.lineTo(0.938 * cw, 0.462 * ch);
+  g.closePath(); g.fill();
+
+  g.strokeStyle = "rgba(150,140,132,0.22)";        // nominal ground line
+  g.lineWidth = Math.max(1, DPR);
+  g.beginPath(); g.moveTo(0, 0.952 * ch); g.lineTo(cw, 0.952 * ch); g.stroke();
+}
+
+function resize() {
+  DPR = Math.min(1.5, window.devicePixelRatio || 1);
+  W = window.innerWidth  || 1280;
+  H = window.innerHeight || 800;
+  cw = Math.max(1, Math.round(W * DPR));
+  ch = Math.max(1, Math.round(H * DPR));
+  cv.width = cw; cv.height = ch;
+  cv.style.width = W + "px"; cv.style.height = H + "px";
+  SU    = Math.max(420, Math.min(1500, Math.sqrt(W * H)));      // size unit
+  viewF = Math.max(0.40, Math.min(1.55, Math.sqrt(W * H) / 1200)); // density
+  bakeTree();
+}
+
+/* ═══════════════════ LOOP ════════════════════════════════════════════════ */
+var fT = 0, fN = 0, msSm = 0, uiT = 0;
+
+function frame(now) {
+  raf = window.requestAnimationFrame(frame);
+  var dt = (now - last) / 1000;
+  last = now;
+  if (dt > 0.05) dt = 0.05;                        // returning tab must not teleport
+  if (dt <= 0) return;
+  clock += dt;
+
+  var t0 = performance.now();
+  update(dt, clock);
+  draw();
+  var cost = performance.now() - t0;
+  msSm += (cost - msSm) * 0.06;
+
+  fN++;
+  if (now - fT > 500) {
+    var fps = fN * 1000 / (now - fT); fT = now; fN = 0;
+    if (now - uiT > 240) {
+      uiT = now;
+      elF.textContent = fps.toFixed(0);
+      elM.textContent = msSm.toFixed(2) + " ms";
+      elC.textContent = live + (landed ? " (" + landed + " down)" : "");
+    }
+  }
+}
+
+function start() {
+  if (running || reduce) return;
+  running = true; last = performance.now(); fT = last; fN = 0;
+  raf = window.requestAnimationFrame(frame);
+}
+function stop() {
+  if (!running) return;
+  running = false; window.cancelAnimationFrame(raf); raf = 0;
+}
+
+/* ═══════════════════ REDUCED MOTION ══════════════════════════════════════ */
+function staticScene() {
+  for (var i = 0; i < 14; i++) {
+    spawn(0);
+    var p = P[freeS[freeTop]];                     // the one just handed out
+    var u = i / 13;
+    p.x = 0.86 - u * 0.86 + (Math.random() - 0.5) * 0.05;
+    p.y = 0.24 + u * u * 0.52 + (Math.random() - 0.5) * 0.10;
+    p.fr = [0, 1, 2, 5, 6, 7, 8, 9, 10, 13, 14, 15][(Math.random() * 12) | 0];
+    p.tb = 0;                                      // 0 disables the spawn fade-in
+  }
+  draw();
+  elC.textContent = live;                          // the loop that normally
+  elF.textContent = elM.textContent = "—";    // updates these never runs
+}
+
+/* ═══════════════════ PUBLIC API ══════════════════════════════════════════ */
+/**
+ * window.leafSystem
+ *   setIntensity(v)  0 → bare trickle (never frozen), 1 → strong gust,
+ *                    usable to ~1.3. Approached exponentially (tau 0.55s),
+ *                    so it is always safe to call every frame — e.g. straight
+ *                    from cursor proximity, scroll position or an idle timer.
+ *   getIntensity()   the SMOOTHED value actually driving the sim.
+ *   pause() / resume()  stop and restart the rAF loop with no time jump.
+ *   count()          live leaves right now.
+ */
+window.leafSystem = {
+  setIntensity: function (v) {
+    v = +v; if (!isFinite(v)) return;
+    Itarget = v < 0 ? 0 : (v > 1.6 ? 1.6 : v);
+    if (elS) elS.value = Itarget; if (elI) elI.textContent = Itarget.toFixed(2);
+  },
+  getIntensity: function () { return I; },
+  targetIntensity: function () { return Itarget; },
+  pause: stop,
+  resume: start,
+  count: function () { return live; },
+  stats: function () {
+    return { live: live, landed: landed, pool: POOL, free: freeTop,
+             spawned: stat.spawned, freed: stat.freed,
+             exitLeft: stat.exitLeft, exitBottom: stat.exitBottom,
+             exitOther: stat.exitOther, landedTotal: stat.landedTotal,
+             intensity: I, wind: wind, gust: gust, ms: msSm };
+  },
+  /* internals, for the headless harness only */
+  _P: P, _exits: EX, _exitN: function () { return exN; },
+  _step: function (dt) { clock += dt; update(dt, clock); },
+  _reduced: function () { return reduce; }
+};
+
+/* ═══════════════════ WIRE UP ═════════════════════════════════════════════ */
+elS.addEventListener("input", function () { window.leafSystem.setIntensity(elS.value); });
+window.addEventListener("resize", resize);
+document.addEventListener("visibilitychange", function () {
+  if (document.hidden) stop();
+  else if (!reduce && ready) start();             // start() reseeds `last`: no jump
+});
+
+resize();
+loadSheets(function () { if (reduce) staticScene(); else start(); });
+
+})();
+</script>
+</body>
+</html>

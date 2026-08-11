@@ -1,0 +1,1007 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>momiji — choreographed leaf field</title>
+<style>
+  html, body { margin:0; padding:0; height:100%; background:#0c0c0c; overflow:hidden; }
+  #stage { position:fixed; inset:0; display:block; width:100%; height:100%; }
+  #panel {
+    position:fixed; top:14px; left:14px; z-index:10;
+    font:12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color:#cfc7bf; background:rgba(18,16,15,.82); border:1px solid #2c2724;
+    border-radius:8px; padding:10px 12px; width:212px;
+    -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+    user-select:none;
+  }
+  #panel h1 { font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#8d8177; margin:0 0 8px; font-weight:600; }
+  #panel .row { display:flex; justify-content:space-between; gap:8px; }
+  #panel .k { color:#7e7369; }
+  #panel .v { color:#e6ddd3; font-variant-numeric:tabular-nums; }
+  #panel input[type=range] { width:100%; margin:8px 0 6px; accent-color:#c2542b; }
+  #panel .sep { height:1px; background:#2c2724; margin:8px 0; }
+  #panel button {
+    font:inherit; color:#cfc7bf; background:#211d1b; border:1px solid #37312d;
+    border-radius:5px; padding:3px 8px; cursor:pointer;
+  }
+  #panel button:hover { background:#2b2523; }
+  #panel .btns { display:flex; gap:6px; margin-top:8px; }
+  #note { position:fixed; bottom:12px; left:14px; z-index:10; color:#4a423c;
+          font:11px ui-monospace, Menlo, monospace; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<div id="panel">
+  <h1>leaf field</h1>
+  <div class="row"><span class="k">intensity</span><span class="v" id="vInt">0.60</span></div>
+  <input id="slInt" type="range" min="0" max="1.2" step="0.01" value="0.6">
+  <div class="sep"></div>
+  <div class="row"><span class="k">fps</span><span class="v" id="vFps">–</span></div>
+  <div class="row"><span class="k">live leaves</span><span class="v" id="vCount">0</span></div>
+  <div class="row"><span class="k">on ground</span><span class="v" id="vGround">0</span></div>
+  <div class="row"><span class="k">wind</span><span class="v" id="vWind">1.00</span></div>
+  <div class="btns">
+    <button id="bPause">pause</button>
+    <button id="bGuides">guides: on</button>
+  </div>
+</div>
+<div id="note">scaffolding only — tree / fuji / portrait are placeholders</div>
+
+<script id="leaf-source">
+/* =====================================================================
+   momiji leaf field — choreographed (not simulated) 2D canvas particles
+   ---------------------------------------------------------------------
+   Every leaf is handed a parametric path at spawn and then advanced
+   along it. There is no force integration anywhere: position is a pure
+   closed-form function of a per-leaf progress scalar u in [0,1] plus
+   three independent phase accumulators for the flutter and the tumble.
+
+   Data layout is structure-of-arrays over typed arrays, allocated once.
+   Nothing is allocated inside the frame loop.
+
+   Runs in a browser (auto-boots against #stage) and in Node (exports
+   createLeafSystem so the update maths can be tested headless).
+   ===================================================================== */
+(function () {
+  'use strict';
+
+  var TAU = Math.PI * 2;
+  var PI = Math.PI;
+
+  /* ------------------------------------------------------------------
+     CONFIG — everything worth turning lives here.
+     Distances are normalised: x in [0,1] across the viewport width,
+     y in [0,1] down the viewport height. Speeds are "fractions of the
+     viewport per second". That is what makes the system resolution
+     independent: nothing below is a pixel constant.
+     ------------------------------------------------------------------ */
+  var CONFIG = {
+    POOL: 460,                 // hard ceiling on live leaves
+
+    /* --- population ------------------------------------------------ */
+    DENSITY_BASE: 7,           // leaves alive at intensity 0 (the trickle)
+    DENSITY_GAIN: 168,         // extra leaves alive at intensity 1, at DENSITY_REF
+    DENSITY_EXP: 1.25,         // curve of density vs intensity
+    /* Population scales with viewport size, or a phone gets desktop counts
+       crammed into a quarter of the area and reads as a blizzard. sqrt(area)
+       is the compromise: leaf SIZE already scales the same way, so the share
+       of the frame covered by leaves stays roughly constant. */
+    DENSITY_REF: 1113,         // sqrt(1440*860), the reference viewport
+    DENSITY_AREA_MIN: 0.42,
+    DENSITY_AREA_MAX: 1.30,
+    INTENSITY_TAU: 0.9,        // s, smoothing of intensity changes
+    MAX_SPAWN_PER_FRAME: 5,    // anti-burst clamp after a long frame
+    THRESH_MAX: 4.5,           // truncation of the Exp(1) inter-arrival draw
+    DEBT_MAX: 6,               // spawn credit is never banked beyond this
+
+    /* --- emission (the canopy) ------------------------------------- */
+    /* two lobes; together they occupy x[0.72,1.00] y[0.08,0.65] */
+    LOBE_A: { x: 0.888, y: 0.295, rx: 0.112, ry: 0.205, w: 0.64 },
+    LOBE_B: { x: 0.826, y: 0.505, rx: 0.095, ry: 0.145, w: 0.36 },
+    LOBE_BIAS: 0.88,           // <1 pushes samples toward the lobe centre
+    WINDWARD_SHIFT: -0.012,    // leaves peel off the wind-facing edge
+
+    /* --- travel ----------------------------------------------------- */
+    SPEED_MIN: 0.055,          // viewport widths / second
+    SPEED_SPAN: 0.115,
+    SPEED_EXP: 1.4,            // skews the speed distribution slow
+    SPEED_INTENSITY: 0.34,     // speed bonus at intensity 1 (spawn-time)
+    SINK_MIN: -0.06,           // net vertical drift over a full traverse
+    SINK_SPAN: 0.66,           //  wide: without this the field forms one
+    SINK_EXP: 1.05,            //  bright ribbon at the canopy's own height
+    ARC_SPAN: 0.42,            // single-hump bow amplitude, +/- half of this
+    ARC_MAX: 0.46,             // hard cap; the bow must not leave the frame
+    X_EASE: 0.14,              // mild acceleration as the leaf clears the tree
+
+    /* --- fate -------------------------------------------------------- */
+    LAND_P_BASE: 0.42,         // P(descend and settle) at intensity 0
+    LAND_P_SLOPE: -0.20,       // strong wind carries more leaves across
+    LAND_P_MIN: 0.12,
+    LAND_P_MAX: 0.46,
+    LAND_DIST_MIN: 0.15,       // how far left a lander gets, min
+    LAND_DIST_SPAN: 0.78,
+    LAND_DIST_EXP: 1.3,
+    LAND_TIME_MIN: 2.6,        // s, clamp on descent duration
+    LAND_TIME_MAX: 12.0,
+    LAND_SPEED_MUL: 0.72,      // landers lose the wind, travel slower
+    GROUND_Y: 0.895,           // top of the settling band
+    GROUND_SPREAD: 0.075,      // deeper leaves settle lower on screen
+    REST_HOLD_MIN: 2.2,        // s at rest before the fade starts
+    REST_HOLD_SPAN: 4.6,
+    FADE_MIN: 1.1,
+    FADE_SPAN: 1.1,
+    GROUND_SOFT_CAP: 14,       // above this, new landings rest briefly
+    GROUND_CROWD_MUL: 0.35,
+
+    /* --- flutter (two incommensurate sinusoids) ---------------------- */
+    FLUT_AMP_MIN: 0.012,       // fraction of viewport height
+    FLUT_AMP_SPAN: 0.036,
+    FLUT_W_MIN: 0.90,          // rad / s
+    FLUT_W_SPAN: 2.60,
+    FLUT_RATIO: 1.6180339887,  // golden ratio: never commensurate
+    FLUT_RATIO_JITTER: 0.30,   // ... and jittered so no two leaves share it
+    FLUT_AMP2: 0.35,
+    FLUT_AMP2_SPAN: 0.50,
+    FLUT_X: 0.70,              // horizontal share of the same swing
+
+    /* --- tumble (the 16-frame sprite cycle) -------------------------- */
+    TUMBLE_MIN: 1.2,           // sheet frames / second
+    TUMBLE_SPAN: 8.5,
+    TUMBLE_MOD_W_MIN: 0.15,    // slow modulation of the tumble rate
+    TUMBLE_MOD_W_SPAN: 0.55,
+    TUMBLE_MOD_DEPTH: 0.70,
+    ROT_AMP: 0.55,             // rad, 2D banking on top of the 3D tumble
+
+    /* --- depth bands: far / mid / near ------------------------------- */
+    BAND_P: [0.42, 0.38, 0.20],
+    BAND_SIZE: [0.62, 0.92, 1.42],
+    BAND_SIZE_JIT: [0.16, 0.20, 0.30],
+    BAND_SPEED: [0.62, 1.00, 1.36],
+    BAND_ALPHA: [0.52, 0.80, 0.97],
+    BAND_ALPHA_JIT: [0.14, 0.14, 0.06],
+    BAND_FLUT: [0.70, 1.00, 1.30],
+    SIZE_REF: 0.052,           // leaf size = clamp(sqrt(W*H)*this, 22, 82) px
+    SIZE_MIN: 22,
+    SIZE_MAX: 82,
+
+    /* --- global gust envelope ---------------------------------------- */
+    GUST_DUR_MIN: 1.7,
+    GUST_DUR_SPAN: 3.6,
+    GUST_GAP_MIN: 1.2,
+    GUST_GAP_SPAN: 5.5,
+    GUST_PEAK_MIN: 0.30,
+    GUST_PEAK_SPAN: 0.60,
+    GUST_INTENSITY: 0.65,      // share of gust strength that scales with intensity
+    BREATH_A1: 0.090, BREATH_W1: 0.113,
+    BREATH_A2: 0.055, BREATH_W2: 0.197,
+    WIND_MIN: 0.55,            // never frozen, even at intensity 0
+    WIND_MAX: 2.40,
+    WIND_FLUT: 0.45,           // how much a gust speeds the flutter
+    WIND_SPAWN: 0.40,          // how much a gust rips extra leaves off
+
+    /* --- composition: keep the portrait readable ---------------------- */
+    PORTRAIT: { x: 0.44, y: 0.55, rx: 0.145, ry: 0.32 },
+    PORTRAIT_CORE: 0.15,       // half-height of the "keep the face clear" zone
+    ROUTE_P: 0.78,             // P(re-aim a leaf aimed dead at the face)
+    ROUTE_SPREAD_UP: 0.26,     // displaced leaves are scattered over a wide band,
+    ROUTE_SPREAD_DOWN: 0.15,   //  never stacked on the edge of the zone
+    ROUTE_SPREAD_EXP: 0.75,
+    ROUTE_CORE_JITTER: 0.90,   // per-leaf jitter of the zone edge: dithers the boundary
+    DEFLECT_MIN: 0.050,        // gentle bow around the portrait, in flight
+    DEFLECT_SPAN: 0.075,
+    VEIL: 0.36,                // alpha attenuation over the portrait core
+
+    /* --- housekeeping -------------------------------------------------- */
+    DT_MAX: 0.05,              // s, clamp so a backgrounded tab cannot teleport
+    LIFE_EMA: 0.05
+  };
+
+  var FATE_CROSS = 0, FATE_LAND = 1;
+  var ST_FLY = 0, ST_REST = 1;
+
+  /* mulberry32 — small, fast, seedable. Seedable matters for the harness. */
+  function makeRandom(seed) {
+    var s = seed >>> 0;
+    return function () {
+      s = (s + 0x6D2B79F5) >>> 0;
+      var t = s;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+  function smootherstep(a, b, x) {
+    var t = clamp((x - a) / (b - a), 0, 1);
+    return t * t * t * (t * (t * 6 - 15) + 10);
+  }
+
+  /* ==================================================================
+     createLeafSystem
+     opts: { ctx, width, height, dpr, sprites, seed, intensity }
+     `ctx` may be any object exposing the 2D methods used below; the Node
+     harness passes a stub so the draw maths is exercised without a canvas.
+     ================================================================== */
+  function createLeafSystem(opts) {
+    opts = opts || {};
+    var C = CONFIG;
+    var N = C.POOL;
+    var rnd = opts.random || makeRandom((opts.seed === undefined ? 1 : opts.seed) | 0);
+
+    var ctx = opts.ctx || null;
+    var sprites = opts.sprites || null;
+    var W = opts.width || 1280, H = opts.height || 800, DPR = opts.dpr || 1;
+    var sizeRef = 40, aspectHW = H / W, areaScale = 1;
+
+    /* ---- pool: structure of arrays, allocated exactly once ---------- */
+    var act = new Uint8Array(N), fate = new Uint8Array(N), state = new Uint8Array(N);
+    var band = new Uint8Array(N), sheet = new Uint8Array(N), flip = new Uint8Array(N);
+
+    var u = new Float32Array(N), uRate = new Float32Array(N);
+    var nx0 = new Float32Array(N), ny0 = new Float32Array(N);
+    var nxT = new Float32Array(N), nyT = new Float32Array(N);
+    var sink = new Float32Array(N), arc = new Float32Array(N);
+    var a1 = new Float32Array(N), w1 = new Float32Array(N), ph1 = new Float32Array(N);
+    var a2 = new Float32Array(N), w2 = new Float32Array(N), ph2 = new Float32Array(N);
+    var w3 = new Float32Array(N), ph3 = new Float32Array(N);
+    var sizeA = new Float32Array(N), alphaA = new Float32Array(N);
+    var rot0 = new Float32Array(N), rotAmp = new Float32Array(N);
+    var frP = new Float32Array(N), frR = new Float32Array(N);
+    var defStr = new Float32Array(N);
+    var restT = new Float32Array(N), fadeD = new Float32Array(N), restAge = new Float32Array(N);
+    var nx = new Float32Array(N), ny = new Float32Array(N);
+    var curA = new Float32Array(N), curRot = new Float32Array(N);
+    var bornT = new Float32Array(N);
+
+    var free = new Int32Array(N), freeN = N;
+    for (var i = 0; i < N; i++) free[i] = N - 1 - i;
+
+    /* ---- live state -------------------------------------------------- */
+    var alive = 0, grounded = 0;
+    var intensityTarget = (opts.intensity === undefined ? 0.6 : opts.intensity);
+    var intensity = intensityTarget;
+    var simT = 0;
+    var spawnDebt = 0, spawnThresh = -Math.log(1 - rnd());
+    var meanLife = 9.0;
+    var wind = 1, windFlut = 1;
+    var gustPhase = 0, gustDur = 2.4, gustGap = 2.0, gustPeak = 0.4, gustIn = false;
+
+    var stats = {
+      spawned: 0, despawned: 0,
+      exitLeft: 0, exitBottom: 0, exitTop: 0, settled: 0,
+      landsStarted: 0
+    };
+
+    /* ---- geometry helpers -------------------------------------------- */
+    function recomputeScale() {
+      sizeRef = clamp(Math.sqrt(W * H) * C.SIZE_REF, C.SIZE_MIN, C.SIZE_MAX);
+      aspectHW = H / W;
+      areaScale = clamp(Math.sqrt(W * H) / C.DENSITY_REF, C.DENSITY_AREA_MIN, C.DENSITY_AREA_MAX);
+    }
+    recomputeScale();
+
+    /* Sample a point inside one of the canopy lobes.
+       r = rnd^bias with bias<1 concentrates toward the middle of the lobe,
+       which is where the leaf mass actually is. */
+    function sampleCanopy(out) {
+      var L = (rnd() < C.LOBE_A.w) ? C.LOBE_A : C.LOBE_B;
+      var ang = rnd() * TAU;
+      var r = Math.pow(rnd(), C.LOBE_BIAS);
+      out[0] = clamp(L.x + Math.cos(ang) * r * L.rx + C.WINDWARD_SHIFT * rnd(), 0.72, 1.00);
+      out[1] = clamp(L.y + Math.sin(ang) * r * L.ry, 0.08, 0.65);
+    }
+    var _pt = new Float32Array(2);
+
+    function pickBand() {
+      var r = rnd();
+      if (r < C.BAND_P[0]) return 0;
+      if (r < C.BAND_P[0] + C.BAND_P[1]) return 1;
+      return 2;
+    }
+
+    /* ==================================================================
+       spawn — draws one leaf's entire choreography. Called maybe ten
+       times a second; never inside a per-leaf loop.
+       ================================================================== */
+    function spawn() {
+      if (freeN === 0) return -1;
+      var i = free[--freeN];
+      act[i] = 1; state[i] = ST_FLY; alive++;
+      stats.spawned++;
+      bornT[i] = simT;
+
+      sampleCanopy(_pt);
+      nx0[i] = _pt[0]; ny0[i] = _pt[1];
+      nx[i] = _pt[0]; ny[i] = _pt[1];
+
+      var b = pickBand();
+      band[i] = b;
+      sheet[i] = (rnd() * 3) | 0;
+      flip[i] = rnd() < 0.5 ? 1 : 0;
+
+      var depthN = (b + rnd()) / 3;                       // 0 far .. 1 near
+      sizeA[i] = sizeRef * (C.BAND_SIZE[b] + (rnd() - 0.5) * 2 * C.BAND_SIZE_JIT[b]);
+      alphaA[i] = clamp(C.BAND_ALPHA[b] + (rnd() - 0.5) * 2 * C.BAND_ALPHA_JIT[b], 0.18, 1);
+
+      var speed = (C.SPEED_MIN + C.SPEED_SPAN * Math.pow(rnd(), C.SPEED_EXP))
+                * C.BAND_SPEED[b]
+                * (1 - C.SPEED_INTENSITY * 0.5 + C.SPEED_INTENSITY * intensity);
+
+      var pLand = clamp(C.LAND_P_BASE + C.LAND_P_SLOPE * intensity, C.LAND_P_MIN, C.LAND_P_MAX);
+      var isLand = rnd() < pLand;
+      fate[i] = isLand ? FATE_LAND : FATE_CROSS;
+
+      var predY;
+      if (!isLand) {
+        nxT[i] = -0.13 - 0.08 * rnd();   /* clear of the frame even at max flutter */
+        var dist = nx0[i] - nxT[i];
+        uRate[i] = speed / dist;
+        var sk = C.SINK_MIN + C.SINK_SPAN * Math.pow(rnd(), C.SINK_EXP);
+        sink[i] = Math.min(sk, 1.03 - ny0[i]);            // keep it inside the frame
+        /* the bow peaks at u = 0.5; bound it there so it cannot sail off
+           the top or dive through the floor */
+        var midY = ny0[i] + sink[i] * 0.5;
+        var arcLo = Math.max(-C.ARC_MAX, -0.04 - midY);
+        var arcHi = Math.min(C.ARC_MAX, 1.00 - midY);
+        arc[i] = clamp((rnd() - 0.5) * C.ARC_SPAN, arcLo, arcHi);
+        nyT[i] = 0;
+        /* Where will this leaf be when it reaches the portrait? Because the
+           path is closed form we can simply ask, at spawn, and re-aim it.
+           The `arc` term is the right lever: sin(PI*u) is zero at both ends,
+           so bending it changes the mid-screen height without touching where
+           the leaf entered or where it leaves. This is the thing a force
+           simulation cannot promise — guaranteed composition. */
+        var uc = clamp((nx0[i] - C.PORTRAIT.x) / dist, 0, 1);
+        predY = ny0[i] + sink[i] * uc + arc[i] * Math.sin(PI * uc);
+        var off = predY - C.PORTRAIT.y;
+        /* Probability ramps smoothly with how dead-on the leaf is aimed, and
+           the new heights are scattered over a wide band. Both matter: a hard
+           threshold plus a fixed target would empty the zone and stack a
+           visible ridge of leaves along its edge — an invisible wall. */
+        var core = C.PORTRAIT_CORE * (1 - C.ROUTE_CORE_JITTER * 0.5 + C.ROUTE_CORE_JITTER * rnd());
+        var depth = 1 - Math.abs(off) / core;
+        if (depth > 0 && rnd() < C.ROUTE_P * depth * depth * (3 - 2 * depth)) {
+          var sgn = Math.abs(off) < 0.012 ? (rnd() < 0.5 ? -1 : 1) : (off >= 0 ? 1 : -1);
+          var spread = sgn < 0 ? C.ROUTE_SPREAD_UP : C.ROUTE_SPREAD_DOWN;
+          var tgt = C.PORTRAIT.y + sgn * (core + spread * Math.pow(rnd(), C.ROUTE_SPREAD_EXP));
+          var lever = Math.sin(PI * uc); if (lever < 0.30) lever = 0.30;
+          arc[i] = clamp(arc[i] + (tgt - predY) / lever, arcLo, arcHi);
+          predY = ny0[i] + sink[i] * uc + arc[i] * Math.sin(PI * uc);
+        }
+      } else {
+        stats.landsStarted++;
+        var travel = C.LAND_DIST_MIN + C.LAND_DIST_SPAN * Math.pow(rnd(), C.LAND_DIST_EXP);
+        nxT[i] = clamp(nx0[i] - travel, -0.04, 0.99);
+        nyT[i] = C.GROUND_Y + C.GROUND_SPREAD * depthN + 0.018 * rnd();
+        var d2 = Math.max(0.06, nx0[i] - nxT[i]);
+        var dur = clamp(d2 / (speed * C.LAND_SPEED_MUL), C.LAND_TIME_MIN, C.LAND_TIME_MAX);
+        uRate[i] = 1 / dur;
+        sink[i] = 0; arc[i] = 0;
+        predY = (ny0[i] + nyT[i]) * 0.5;
+      }
+
+      var side;
+      if (Math.abs(predY - C.PORTRAIT.y) < 0.05) side = rnd() < 0.5 ? -1 : 1;
+      else side = predY > C.PORTRAIT.y ? 1 : -1;
+      defStr[i] = side * (C.DEFLECT_MIN + C.DEFLECT_SPAN * rnd());
+
+      var amp = (C.FLUT_AMP_MIN + C.FLUT_AMP_SPAN * rnd()) * C.BAND_FLUT[b];
+      a1[i] = amp;
+      a2[i] = amp * (C.FLUT_AMP2 + C.FLUT_AMP2_SPAN * rnd());
+      w1[i] = C.FLUT_W_MIN + C.FLUT_W_SPAN * rnd();
+      w2[i] = w1[i] * C.FLUT_RATIO * (1 - C.FLUT_RATIO_JITTER * 0.5 + C.FLUT_RATIO_JITTER * rnd());
+      ph1[i] = rnd() * TAU; ph2[i] = rnd() * TAU;
+      w3[i] = C.TUMBLE_MOD_W_MIN + C.TUMBLE_MOD_W_SPAN * rnd();
+      ph3[i] = rnd() * TAU;
+
+      frP[i] = rnd() * 16;
+      frR[i] = (C.TUMBLE_MIN + C.TUMBLE_SPAN * rnd()) * (rnd() < 0.5 ? -1 : 1);
+      rot0[i] = (rnd() - 0.5) * TAU;
+      rotAmp[i] = C.ROT_AMP * (0.4 + rnd()) * (isLand ? 1.5 : 1);
+
+      u[i] = 0;
+      restT[i] = 0; restAge[i] = 0;
+      fadeD[i] = C.FADE_MIN + C.FADE_SPAN * rnd();
+      curA[i] = alphaA[i]; curRot[i] = rot0[i];
+      return i;
+    }
+
+    function despawn(i) {
+      if (!act[i]) return;
+      if (state[i] === ST_REST) grounded--;
+      act[i] = 0; alive--;
+      free[freeN++] = i;
+      stats.despawned++;
+      var life = simT - bornT[i];
+      if (life > 0.2 && life < 90) meanLife += (life - meanLife) * C.LIFE_EMA;
+    }
+
+    /* ==================================================================
+       wind — a global envelope: slow breathing plus discrete gusts with
+       a random gap between them. Everything shares it, so the field
+       surges and relaxes as one body without any leaf syncing to another.
+       ================================================================== */
+    function updateWind(dt) {
+      gustPhase += dt;
+      if (gustIn) {
+        if (gustPhase >= gustDur) {
+          gustIn = false; gustPhase = 0;
+          gustGap = C.GUST_GAP_MIN + C.GUST_GAP_SPAN * rnd();
+        }
+      } else if (gustPhase >= gustGap) {
+        gustIn = true; gustPhase = 0;
+        gustDur = C.GUST_DUR_MIN + C.GUST_DUR_SPAN * rnd();
+        gustPeak = (C.GUST_PEAK_MIN + C.GUST_PEAK_SPAN * rnd())
+                 * (1 - C.GUST_INTENSITY + C.GUST_INTENSITY * clamp(intensity, 0, 1.4));
+      }
+      var env = 0;
+      if (gustIn) {
+        var g = gustPhase / gustDur;
+        var s = Math.sin(PI * g);
+        env = s * s * Math.sqrt(s);                       // s^2.5: slow attack, long tail
+      }
+      var breath = C.BREATH_A1 * Math.sin(simT * C.BREATH_W1)
+                 + C.BREATH_A2 * Math.sin(simT * C.BREATH_W2 + 2.1);
+      wind = clamp(1 + breath + gustPeak * env, C.WIND_MIN, C.WIND_MAX);
+      windFlut = 1 + (wind - 1) * C.WIND_FLUT;
+    }
+
+    /* ==================================================================
+       step(dt) — advance everything. No allocation, no closures.
+       ================================================================== */
+    function step(dt) {
+      if (!(dt > 0)) return;
+      if (dt > C.DT_MAX) dt = C.DT_MAX;
+      simT += dt;
+
+      /* intensity is low-passed so a jump in the driving signal turns into
+         a ramp here; nothing downstream can pop. */
+      var k = 1 - Math.exp(-dt / C.INTENSITY_TAU);
+      intensity += (intensityTarget - intensity) * k;
+
+      updateWind(dt);
+
+      /* ---- population control -------------------------------------- */
+      var target = C.DENSITY_BASE
+                 + C.DENSITY_GAIN * Math.pow(Math.max(0, intensity), C.DENSITY_EXP) * areaScale;
+      var rate = target / Math.max(2, meanLife);
+      rate *= clamp(1 + (target - alive) / (target + 20) * 0.6, 0.25, 2.2);
+      rate *= (1 - C.WIND_SPAWN) + C.WIND_SPAWN * wind;
+      spawnDebt += rate * dt;
+      var made = 0;
+      while (spawnDebt >= spawnThresh && made < C.MAX_SPAWN_PER_FRAME && freeN > 0) {
+        spawnDebt -= spawnThresh;
+        /* Exp(1) inter-arrivals => Poisson emission, i.e. no rhythm at all.
+           Truncated at THRESH_MAX: an untruncated draw can exceed the debt
+           cap below and deadlock the emitter permanently. */
+        spawnThresh = -Math.log(1 - rnd());
+        if (spawnThresh > C.THRESH_MAX) spawnThresh = C.THRESH_MAX;
+        spawn();
+        made++;
+      }
+      if (spawnDebt > C.DEBT_MAX) spawnDebt = C.DEBT_MAX; // never bank a burst
+
+      /* ---- advance every live leaf --------------------------------- */
+      var P = C.PORTRAIT;
+      var invPRX = 1 / P.rx, invPRY = 1 / P.ry;
+      var veil = C.VEIL;
+
+      for (var i = 0; i < N; i++) {
+        if (!act[i]) continue;
+
+        if (state[i] === ST_REST) {
+          restAge[i] += dt;
+          restT[i] -= dt;
+          if (restT[i] <= 0) { curA[i] = 0; despawn(i); continue; }
+          var f = fadeD[i];
+          curA[i] = alphaA[i] * (restT[i] < f ? restT[i] / f : 1);
+          /* a short damped bounce as it touches down, then dead still */
+          var q = 1 - restAge[i] / 0.7;
+          if (q > 0) {
+            curRot[i] = rot0[i] + 0.25 * q * q * Math.sin(restAge[i] * 22);
+            ny[i] = nyT[i] + 0.006 * (1 - q) * (1 - q);
+          } else {
+            curRot[i] = rot0[i];
+          }
+          continue;
+        }
+
+        var du = uRate[i] * dt * wind;
+        u[i] += du;
+
+        ph1[i] += w1[i] * dt * windFlut;
+        ph2[i] += w2[i] * dt * windFlut;
+        ph3[i] += w3[i] * dt;
+        if (ph1[i] > 1e6) { ph1[i] -= 1e6; }               // keep float32 precise
+        if (ph2[i] > 1e6) { ph2[i] -= 1e6; }
+        if (ph3[i] > 1e6) { ph3[i] -= 1e6; }
+
+        var uu = u[i];
+        var x, y, taper = 1;
+
+        if (fate[i] === FATE_CROSS) {
+          var ex = uu * (1 - C.X_EASE + C.X_EASE * uu);    // mild acceleration
+          x = nx0[i] + (nxT[i] - nx0[i]) * ex;
+          y = ny0[i] + sink[i] * uu + arc[i] * Math.sin(PI * uu);
+        } else {
+          var e = 1 - (1 - uu) * (1 - uu);                 // fast then stalling
+          if (uu > 1) e = 1;
+          x = nx0[i] + (nxT[i] - nx0[i]) * e;
+          var sm = uu * uu * (3 - 2 * uu);
+          if (uu > 1) sm = 1;
+          var ev = 0.45 * sm + 0.55 * Math.min(uu, 1);     // eases in, exact at u=1
+          y = ny0[i] + (nyT[i] - ny0[i]) * ev;
+          taper = 1 - smootherstep(0.70, 1, uu);           // flutter dies out on landing
+        }
+
+        var s1 = Math.sin(ph1[i]), s2 = Math.sin(ph2[i]);
+        var fl = (a1[i] * s1 + a2[i] * s2) * taper;
+        y += fl;
+        x += (a1[i] * Math.cos(ph1[i]) + a2[i] * Math.cos(ph2[i])) * C.FLUT_X * taper * aspectHW;
+
+        /* ---- composition: bow around the portrait and veil over it --- */
+        var dxn = (x - P.x) * invPRX;
+        var alph = alphaA[i];
+        if (dxn > -1 && dxn < 1) {
+          var bx = 1 - dxn * dxn; bx *= bx;
+          var vyn = (y - P.y) * invPRY;
+          if (vyn > -1 && vyn < 1) {
+            var vf = 1 - vyn * vyn;
+            y += defStr[i] * bx * vf;
+            alph *= 1 - veil * bx * vf * vf;
+          }
+        }
+
+        nx[i] = x; ny[i] = y; curA[i] = alph;
+
+        /* tumble: the sheet frame is the 3D rotation, the 2D rotate is bank */
+        var mod = 1 - C.TUMBLE_MOD_DEPTH * 0.5 + C.TUMBLE_MOD_DEPTH * 0.5 * Math.sin(ph3[i]);
+        frP[i] += frR[i] * mod * dt * (0.55 + 0.45 * wind) * taper;
+        curRot[i] = rot0[i] + (rotAmp[i] * s1 + 0.18 * s2) * taper;
+
+        /* ---- fates ---------------------------------------------------- */
+        if (fate[i] === FATE_LAND) {
+          if (uu >= 1) {
+            state[i] = ST_REST; grounded++;
+            stats.settled++;
+            nx[i] = nxT[i]; ny[i] = nyT[i];
+            rot0[i] = curRot[i];
+            restAge[i] = 0;
+            var crowd = grounded > C.GROUND_SOFT_CAP ? C.GROUND_CROWD_MUL : 1;
+            restT[i] = (C.REST_HOLD_MIN + C.REST_HOLD_SPAN * rnd()) * crowd + fadeD[i];
+          }
+        } else if (uu >= 1) {
+          stats.exitLeft++; despawn(i); continue;
+        }
+        if (y > 1.14) { stats.exitBottom++; despawn(i); continue; }
+        if (y < -0.18) { stats.exitTop++; despawn(i); continue; }
+      }
+    }
+
+    /* ==================================================================
+       render — three depth passes, back to front. One setTransform +
+       one drawImage per leaf, no save/restore, no per-frame objects.
+       ================================================================== */
+    function render() {
+      if (!ctx || !sprites) return;
+      var d = DPR;
+      for (var b = 0; b < 3; b++) {
+        for (var i = 0; i < N; i++) {
+          if (!act[i] || band[i] !== b) continue;
+          var a = curA[i];
+          if (a <= 0.004) continue;
+          var sz = sizeA[i];
+          var px = nx[i] * W, py = ny[i] * H;
+          if (px < -sz || px > W + sz || py < -sz || py > H + sz) continue;
+
+          var sp = sprites[sheet[i]];
+          var dz = sz * d;
+          var lv = dz <= 30 ? 3 : (dz <= 58 ? 2 : (dz <= 112 ? 1 : 0));
+          var lvl = sp[lv];
+          var cell = lvl.cell;
+
+          var fi = frP[i] % 16; if (fi < 0) fi += 16;
+          var f = fi | 0;
+          var sx = (f & 3) * cell, sy = (f >> 2) * cell;
+
+          var r = curRot[i];
+          var co = Math.cos(r) * d, si = Math.sin(r) * d;
+          var fx = flip[i] ? -1 : 1;
+          ctx.setTransform(co * fx, si * fx, -si, co, px * d, py * d);
+          ctx.globalAlpha = a;
+          ctx.drawImage(lvl.img, sx, sy, cell, cell, -sz * 0.5, -sz * 0.5, sz, sz);
+        }
+      }
+      ctx.setTransform(d, 0, 0, d, 0, 0);
+      ctx.globalAlpha = 1;
+    }
+
+    /* ---- public surface ---------------------------------------------- */
+    return {
+      /* Intensity: 0 = bare trickle (still alive), 1 = strong gust.
+         Values a little above 1 are legal and useful (1.0 .. ~1.5).
+         The change is low-passed internally (INTENSITY_TAU), so callers
+         may set it every frame from cursor distance / scroll / idle
+         time without any risk of a spawn burst. */
+      setIntensity: function (v) {
+        v = +v;
+        if (!isFinite(v)) return;
+        intensityTarget = clamp(v, 0, 2);
+      },
+      getIntensity: function () { return intensityTarget; },
+      /* the smoothed value actually driving the field right now */
+      getIntensitySmoothed: function () { return intensity; },
+      count: function () { return alive; },
+      groundedCount: function () { return grounded; },
+      windNow: function () { return wind; },
+      targetCount: function () {
+        return C.DENSITY_BASE + C.DENSITY_GAIN * Math.pow(Math.max(0, intensity), C.DENSITY_EXP) * areaScale;
+      },
+      step: step,
+      render: render,
+      resize: function (w, h, dpr) {
+        W = w; H = h; DPR = dpr;
+        recomputeScale();
+        /* positions are normalised, so nothing else has to move */
+      },
+      setSprites: function (s) { sprites = s; },
+      setCtx: function (c) { ctx = c; },
+      /* test / automation hooks — safe to delete on integration */
+      _arrays: {
+        act: act, fate: fate, state: state, band: band, nx: nx, ny: ny,
+        u: u, uRate: uRate, sizeA: sizeA, curA: curA, frP: frP, curRot: curRot,
+        nx0: nx0, ny0: ny0, nxT: nxT, nyT: nyT, sink: sink, arc: arc,
+        a1: a1, a2: a2, w1: w1, w2: w2, alphaA: alphaA
+      },
+      _stats: stats,
+      _meanLife: function () { return meanLife; },
+      _freeN: function () { return freeN; },
+      _config: C,
+      _prewarm: function (seconds, dt) {
+        var t = 0; dt = dt || 1 / 60;
+        while (t < seconds) { step(dt); t += dt; }
+      }
+    };
+  }
+
+  /* ====================================================================
+     Browser bootstrap. Everything below is demo scaffolding except the
+     sprite slicing, the DPR handling and the rAF/visibility plumbing,
+     which you want to keep.
+     ==================================================================== */
+  function boot() {
+    var canvas = document.getElementById('stage');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d', { alpha: false });
+
+    var reduceMQ = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+    var reduced = !!(reduceMQ && reduceMQ.matches);
+
+    var W = 0, H = 0, DPR = 1;
+    var bg = document.createElement('canvas');
+    var bgx = bg.getContext('2d');
+    var showGuides = true;
+
+    var sys = createLeafSystem({
+      ctx: ctx, width: 1280, height: 800, dpr: 1,
+      seed: (Date.now() ^ (Math.random() * 0xffffffff)) | 0,
+      intensity: 0.6
+    });
+
+    /* ---- sprite sheets ------------------------------------------------
+       Each sheet is sliced into 4 mip levels (cells 256/128/64/32) by
+       successive halving, per cell so neighbours cannot bleed. Drawing a
+       40px leaf from a 64px cell instead of a 256px one removes the
+       shimmer and costs the GPU far less. */
+    var SHEETS = [
+      'momiji_leaf_sheet_ember.png',
+      'momiji_leaf_sheet_crimson.png',
+      'momiji_leaf_sheet_amber.png'
+    ];
+
+    function buildMips(img) {
+      var levels = [];
+      var cell = 256;
+      var src = img, srcCell = 256;
+      levels.push({ img: img, cell: 256 });
+      for (var l = 1; l <= 3; l++) {
+        cell = 256 >> l;
+        var c = document.createElement('canvas');
+        c.width = cell * 4; c.height = cell * 4;
+        var g = c.getContext('2d');
+        g.imageSmoothingEnabled = true;
+        if ('imageSmoothingQuality' in g) g.imageSmoothingQuality = 'high';
+        for (var f = 0; f < 16; f++) {
+          var cx = (f & 3), cy = (f >> 2);
+          g.drawImage(src, cx * srcCell, cy * srcCell, srcCell, srcCell,
+                           cx * cell, cy * cell, cell, cell);
+        }
+        levels.push({ img: c, cell: cell });
+        src = c; srcCell = cell;
+      }
+      return levels;
+    }
+
+    /* Fallback sheet, drawn procedurally, so the demo never shows an empty
+       screen if a PNG is missing. Not art — insurance. */
+    function fallbackSheet(hue) {
+      var c = document.createElement('canvas');
+      c.width = 1024; c.height = 1024;
+      var g = c.getContext('2d');
+      for (var f = 0; f < 16; f++) {
+        var cx = (f & 3) * 256, cy = (f >> 2) * 256;
+        var t = f / 16 * Math.PI * 2;
+        var squash = Math.abs(Math.cos(t)) * 0.92 + 0.08;
+        g.save();
+        g.translate(cx + 128, cy + 128);
+        g.scale(squash, 1);
+        g.fillStyle = hue;
+        g.beginPath();
+        for (var k = 0; k < 5; k++) {
+          var a = -Math.PI / 2 + (k - 2) * 0.55;
+          g.moveTo(0, 40);
+          g.lineTo(Math.cos(a) * 95, Math.sin(a) * 95 + 20);
+          g.lineTo(Math.cos(a + 0.28) * 40, Math.sin(a + 0.28) * 40 + 30);
+        }
+        g.closePath(); g.fill();
+        g.restore();
+      }
+      return c;
+    }
+
+    var sprites = new Array(3);
+    var loaded = 0;
+    for (var si = 0; si < 3; si++) (function (idx) {
+      var img = new Image();
+      img.onload = function () { sprites[idx] = buildMips(img); done(); };
+      img.onerror = function () {
+        sprites[idx] = buildMips(fallbackSheet(['#b8452a', '#8e2b22', '#c98a2e'][idx]));
+        done();
+      };
+      img.src = SHEETS[idx];
+    })(si);
+
+    function done() {
+      loaded++;
+      if (loaded === 3) {
+        sys.setSprites(sprites);
+        if (reduced) { drawStatic(); } else { start(); }
+      }
+    }
+
+    /* ---- layout ------------------------------------------------------- */
+    function resize() {
+      DPR = Math.min(window.devicePixelRatio || 1, 1.5);
+      W = Math.max(1, window.innerWidth);
+      H = Math.max(1, window.innerHeight);
+      canvas.width = Math.round(W * DPR);
+      canvas.height = Math.round(H * DPR);
+      canvas.style.width = W + 'px';
+      canvas.style.height = H + 'px';
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      sys.resize(W, H, DPR);
+      paintBackground();
+      if (reduced && loaded === 3) drawStatic();
+    }
+
+    /* ---- scaffolding backdrop, rasterised once per resize -------------- */
+    function paintBackground() {
+      bg.width = Math.round(W * DPR); bg.height = Math.round(H * DPR);
+      bgx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      bgx.clearRect(0, 0, W, H);
+      bgx.fillStyle = '#0c0c0c';
+      bgx.fillRect(0, 0, W, H);
+
+      /* Fuji, far away and very dark */
+      var fy = H * 0.78, fw = W * 0.62, fh = H * 0.30, fcx = W * 0.30;
+      bgx.fillStyle = '#131417';
+      bgx.beginPath();
+      bgx.moveTo(fcx - fw * 0.5, fy);
+      bgx.lineTo(fcx - fw * 0.10, fy - fh);
+      bgx.quadraticCurveTo(fcx, fy - fh * 1.06, fcx + fw * 0.10, fy - fh);
+      bgx.lineTo(fcx + fw * 0.5, fy);
+      bgx.closePath(); bgx.fill();
+      bgx.fillStyle = '#1b1d21';
+      bgx.beginPath();
+      bgx.moveTo(fcx - fw * 0.13, fy - fh * 0.90);
+      bgx.lineTo(fcx - fw * 0.10, fy - fh);
+      bgx.quadraticCurveTo(fcx, fy - fh * 1.06, fcx + fw * 0.10, fy - fh);
+      bgx.lineTo(fcx + fw * 0.13, fy - fh * 0.90);
+      bgx.quadraticCurveTo(fcx, fy - fh * 0.83, fcx - fw * 0.13, fy - fh * 0.90);
+      bgx.closePath(); bgx.fill();
+
+      /* ground line */
+      bgx.strokeStyle = '#1a1a1a'; bgx.lineWidth = 1;
+      bgx.beginPath(); bgx.moveTo(0, H * 0.935); bgx.lineTo(W, H * 0.935); bgx.stroke();
+
+      /* the momiji: trunk + two canopy lobes, matching the emission model */
+      var C = sys._config;
+      bgx.strokeStyle = '#1e1512'; bgx.lineWidth = Math.max(6, W * 0.012);
+      bgx.lineCap = 'round';
+      bgx.beginPath();
+      bgx.moveTo(W * 0.965, H * 0.95);
+      bgx.quadraticCurveTo(W * 0.935, H * 0.70, W * 0.90, H * 0.46);
+      bgx.stroke();
+      bgx.lineWidth = Math.max(3, W * 0.006);
+      bgx.beginPath();
+      bgx.moveTo(W * 0.925, H * 0.66); bgx.quadraticCurveTo(W * 0.87, H * 0.60, W * 0.83, H * 0.52);
+      bgx.moveTo(W * 0.905, H * 0.52); bgx.quadraticCurveTo(W * 0.85, H * 0.42, W * 0.80, H * 0.34);
+      bgx.stroke();
+
+      bgx.fillStyle = 'rgba(34,20,17,0.85)';
+      ellipse(bgx, C.LOBE_A.x * W, C.LOBE_A.y * H, C.LOBE_A.rx * W * 1.15, C.LOBE_A.ry * H * 1.12);
+      bgx.fill();
+      ellipse(bgx, C.LOBE_B.x * W, C.LOBE_B.y * H, C.LOBE_B.rx * W * 1.15, C.LOBE_B.ry * H * 1.12);
+      bgx.fill();
+
+      if (showGuides) {
+        bgx.setLineDash([4, 5]);
+        bgx.strokeStyle = 'rgba(190,110,70,0.45)'; bgx.lineWidth = 1;
+        ellipse(bgx, C.LOBE_A.x * W, C.LOBE_A.y * H, C.LOBE_A.rx * W, C.LOBE_A.ry * H); bgx.stroke();
+        ellipse(bgx, C.LOBE_B.x * W, C.LOBE_B.y * H, C.LOBE_B.rx * W, C.LOBE_B.ry * H); bgx.stroke();
+        bgx.strokeStyle = 'rgba(120,140,190,0.40)';
+        bgx.strokeRect(0.72 * W, 0.08 * H, 0.28 * W, 0.57 * H);
+        bgx.strokeStyle = 'rgba(120,190,150,0.38)';
+        ellipse(bgx, C.PORTRAIT.x * W, C.PORTRAIT.y * H, C.PORTRAIT.rx * W, C.PORTRAIT.ry * H);
+        bgx.stroke();
+        bgx.setLineDash([]);
+        bgx.fillStyle = 'rgba(160,150,140,0.45)';
+        bgx.font = '11px ui-monospace, Menlo, monospace';
+        bgx.fillText('emission box  x 72–100%  y 8–65%', 0.72 * W + 6, 0.08 * H + 14);
+        bgx.fillText('portrait keep-clear', (C.PORTRAIT.x - C.PORTRAIT.rx) * W, (C.PORTRAIT.y - C.PORTRAIT.ry) * H - 6);
+      }
+
+      /* portrait placeholder */
+      bgx.fillStyle = 'rgba(255,255,255,0.028)';
+      ellipse(bgx, C.PORTRAIT.x * W, C.PORTRAIT.y * H, C.PORTRAIT.rx * W * 0.82, C.PORTRAIT.ry * H * 0.86);
+      bgx.fill();
+    }
+
+    function ellipse(g, x, y, rx, ry) {
+      g.beginPath();
+      if (g.ellipse) g.ellipse(x, y, rx, ry, 0, 0, TAU);
+      else { g.save(); g.translate(x, y); g.scale(rx / ry, 1); g.arc(0, 0, ry, 0, TAU); g.restore(); }
+    }
+
+    /* ---- loop --------------------------------------------------------- */
+    var raf = 0, last = 0, running = false, userPaused = false;
+    var fpsEma = 0, fpsAcc = 0, fpsN = 0, uiT = 0;
+
+    function frame(now) {
+      raf = requestAnimationFrame(frame);
+      var dt = (now - last) / 1000;
+      last = now;
+      if (!(dt > 0)) dt = 1 / 60;
+      var rawDt = dt;
+      sys.step(dt);
+
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = 1;
+      ctx.drawImage(bg, 0, 0);
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      sys.render();
+
+      /* UI at 5 Hz, not 60 */
+      if (rawDt < 0.5) { fpsAcc += 1 / Math.max(rawDt, 1e-4); fpsN++; }
+      uiT += rawDt;
+      if (uiT > 0.2) {
+        if (fpsN) { fpsEma = fpsEma ? fpsEma * 0.6 + (fpsAcc / fpsN) * 0.4 : fpsAcc / fpsN; }
+        fpsAcc = 0; fpsN = 0; uiT = 0;
+        elFps.textContent = fpsEma.toFixed(0);
+        elCount.textContent = sys.count();
+        elGround.textContent = sys.groundedCount();
+        elWind.textContent = sys.windNow().toFixed(2);
+      }
+    }
+
+    function start() {
+      if (running || userPaused || reduced || document.hidden) return;
+      running = true;
+      last = performance.now();
+      raf = requestAnimationFrame(frame);
+    }
+    function stop() {
+      running = false;
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+    }
+
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) stop();
+      else { last = performance.now(); start(); }   /* no time jump on return */
+    });
+
+    if (reduceMQ && reduceMQ.addEventListener) {
+      reduceMQ.addEventListener('change', function (e) {
+        reduced = e.matches;
+        if (reduced) { stop(); drawStatic(); } else { start(); }
+      });
+    }
+
+    /* ---- reduced motion: one static frame, rAF never starts ------------ */
+    function drawStatic() {
+      stop();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(bg, 0, 0);
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      /* A throwaway system, run forward for 25 s of virtual time and then
+         frozen: gives a properly scattered still rather than a clump at the
+         tree. step() clamps dt, so this must be many small ticks, not a few
+         big ones. Cost is a few hundred microseconds, once. */
+      var still = createLeafSystem({
+        ctx: ctx, width: W, height: H, dpr: DPR, sprites: sprites, seed: 7, intensity: 0.1
+      });
+      still._prewarm(25, 1 / 40);
+      still.render();
+      elFps.textContent = 'static';
+      elCount.textContent = still.count();
+      elGround.textContent = still.groundedCount();
+      elWind.textContent = '–';
+    }
+
+    /* ---- panel --------------------------------------------------------- */
+    var elFps = document.getElementById('vFps');
+    var elCount = document.getElementById('vCount');
+    var elGround = document.getElementById('vGround');
+    var elWind = document.getElementById('vWind');
+    var elInt = document.getElementById('vInt');
+    var slInt = document.getElementById('slInt');
+    var bPause = document.getElementById('bPause');
+    var bGuides = document.getElementById('bGuides');
+
+    slInt.addEventListener('input', function () {
+      var v = parseFloat(slInt.value);
+      sys.setIntensity(v);
+      elInt.textContent = v.toFixed(2);
+    });
+    bPause.addEventListener('click', function () {
+      if (userPaused) { userPaused = false; last = performance.now(); start(); bPause.textContent = 'pause'; }
+      else { userPaused = true; stop(); bPause.textContent = 'resume'; }
+    });
+    bGuides.addEventListener('click', function () {
+      showGuides = !showGuides;
+      bGuides.textContent = 'guides: ' + (showGuides ? 'on' : 'off');
+      paintBackground();
+      if (reduced) drawStatic();
+    });
+    elInt.textContent = parseFloat(slInt.value).toFixed(2);
+    sys.setIntensity(parseFloat(slInt.value));
+
+    window.addEventListener('resize', resize);
+    resize();
+
+    /* ---- the integration surface --------------------------------------- */
+    window.leafSystem = {
+      /** 0 = trickle, 1 = strong gust; up to ~1.5 is usable. Smoothed internally. */
+      setIntensity: function (v) {
+        sys.setIntensity(v);
+        slInt.value = String(clamp(+v, 0, 1.2));
+        elInt.textContent = (+v).toFixed(2);
+      },
+      getIntensity: function () { return sys.getIntensity(); },
+      pause: function () { userPaused = true; stop(); bPause.textContent = 'resume'; },
+      resume: function () { userPaused = false; last = performance.now(); start(); bPause.textContent = 'pause'; },
+      count: function () { return sys.count(); },
+      /* extras for automation; not part of the required contract */
+      _sys: sys,
+      _reduced: function () { return reduced; },
+      _running: function () { return running; }
+    };
+  }
+
+  if (typeof document !== 'undefined' && typeof window !== 'undefined') {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+    else boot();
+  }
+
+  if (typeof module === 'object' && module && module.exports) {
+    module.exports = { createLeafSystem: createLeafSystem, CONFIG: CONFIG, makeRandom: makeRandom };
+  }
+})();
+</script>
+</body>
+</html>
