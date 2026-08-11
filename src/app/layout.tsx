@@ -38,7 +38,9 @@ export const metadata: Metadata = {
 
 // Runs before first paint so the page never flashes underneath the intro.
 // If JS is off it simply never runs and the content shows immediately.
-const preloaderGate = `try{if(!sessionStorage.getItem('ik-preloader-seen')&&!matchMedia('(prefers-reduced-motion: reduce)').matches){document.documentElement.dataset.preloader='pending';sessionStorage.setItem('ik-preloader-seen','1')}}catch(e){}`;
+// The timeout is the safety net: should hydration ever fail, the gate lifts
+// on its own instead of leaving a permanently blank page.
+const preloaderGate = `try{if(!sessionStorage.getItem('ik-preloader-seen')&&!matchMedia('(prefers-reduced-motion: reduce)').matches){document.documentElement.dataset.preloader='pending';sessionStorage.setItem('ik-preloader-seen','1');setTimeout(function(){delete document.documentElement.dataset.preloader},2500)}}catch(e){}`;
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
