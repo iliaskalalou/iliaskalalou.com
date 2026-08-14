@@ -1,4 +1,4 @@
-import Hero from "@/components/Hero";
+import HeroStage from "@/components/HeroStage";
 import Magnetic from "@/components/Magnetic";
 import Marquee from "@/components/Marquee";
 import Reveal, { RevealText } from "@/components/Reveal";
@@ -46,7 +46,7 @@ export default function Home() {
         </nav>
       </header>
 
-      <Hero />
+      <HeroStage />
 
       <Marquee items={skills} />
 
