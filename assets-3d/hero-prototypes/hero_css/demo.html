@@ -1,0 +1,1211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" href="data:,">  <!-- no favicon request: keeps the byte count honest -->
+<title>Ilias Kalalou — hero (CSS 3D layers)</title>
+<style>
+/* ===========================================================================
+   HERO — four flat renders suspended at genuine depths in a CSS 3D space.
+   No WebGL, no library, no framework. The parallax is a real projection:
+   the world is dollied laterally inside a `perspective`, so a layer at
+   distance d shifts by T·P/d. Near layers move more than far ones because
+   of the maths, not because of a hand-tuned multiplier per layer.
+   =========================================================================== */
+
+:root {
+  --fg:    #ededed;
+  --muted: #8f8f8f;
+  --ember: #C1440E;
+  --amber: #E08D3C;
+  --bg:    #0c0c0c;
+
+  /* --- the projection ---------------------------------------------------
+     P is the camera distance. Each plane sits at --z and is scaled by
+     (P - z)/P so that at rest it projects EXACTLY onto the stage; only its
+     response to the dolly differs. Change P and every layer stays put but
+     the parallax gets stronger (small P) or flatter (large P). */
+  --Pn: 1200;                /* unitless: the same number builds the perspective,
+                                the per-plane scale and the JS shift formula */
+  --P: calc(var(--Pn) * 1px);
+
+  --z-fuji:      -900;   /* air-far sits at -800, between mountain and pagoda */
+  --z-pagoda:    -420;
+  --z-portrait:   -60;   /* air-near sits at  -30, between portrait and momiji */
+  --z-tree:       170;
+
+  /* --- layout, desktop --------------------------------------------------
+     Percentages of the stage, which is exactly the viewport. Each plane is
+     a full-stage sheet; the artwork is placed inside it. That keeps every
+     plane centred on the perspective origin, so the compensating scale is
+     a pure size correction with no positional side effect. */
+  --fuji-w:      124%;   --fuji-x:   -4.0%;  --fuji-y:   10.4%;
+  --pagoda-w:     22%;   --pagoda-x:  5.0%;  --pagoda-y:  34.5%;
+  --portrait-h:   44%;   --portrait-x: 47%;  --portrait-y: 50%;
+  --tree-w:       53%;   --tree-x:  111.5%;  --tree-y:    3.2%;
+
+  /* --- parallax amplitude ---------------------------------------------- */
+  --par-x: 22px;         /* lateral dolly at the frame edge     */
+  --par-y: 12px;         /* vertical dolly                      */
+  --par-rot: 0.30deg;    /* compensating pan, sharpens the near/far ratio */
+  --par-rot-x: 0.18deg;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  overflow: hidden;
+  font-family: ui-sans-serif, -apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --------------------------------------------------------------- stage --- */
+#stage {
+  position: fixed; inset: 0;
+  overflow: hidden;                 /* the clip that makes a lateral dolly safe */
+  perspective: var(--P);
+  perspective-origin: 50% 46%;
+  background: var(--bg);
+}
+
+#world {
+  position: absolute; inset: 0;
+  transform-style: preserve-3d;
+  will-change: transform;
+  transform: translate3d(0,0,0);
+}
+
+.plane {
+  position: absolute; inset: 0;
+  transform-origin: 50% 50%;
+  /* z is a unitless custom property so calc() can build both the translate
+     and its compensating scale from the same number */
+  --s: calc((var(--Pn) - var(--z)) / var(--Pn));
+  transform: translateZ(calc(var(--z) * 1px)) scale(var(--s));
+  backface-visibility: hidden;
+}
+.plane > picture { position: absolute; display: block; }
+.plane img { display: block; width: 100%; height: auto; }
+
+/* Scrims are oversized so the dolly can never uncover a stage edge. */
+.scrim { inset: -10%; }
+
+/* --------------------------------------------------------------- the air ---
+   Two sheets of atmosphere, not five. Every full-viewport plane is one more
+   alpha blend per frame, and on a machine with no GPU that is the whole
+   budget (measured: dropping these five doubled the software-composited
+   frame rate). Gradients this smooth parallax invisibly, so nothing is lost
+   by collapsing them: what matters is only WHICH SIDE of an image layer each
+   sheet of air sits on. */
+#air-far {          /* behind the pagoda, in front of the mountain */
+  --z: -800;
+  background:
+    linear-gradient(to top, rgba(12,12,12,0.96) 0%, rgba(12,12,12,0.68) 18%, rgba(14,12,12,0.26) 44%, rgba(14,13,13,0.10) 66%, transparent 84%),
+    radial-gradient(70% 34% at 46% 82%, rgba(120,80,58,0.09), transparent 70%),
+    radial-gradient(58% 42% at 42% 74%, rgba(193,68,14,0.15) 0%, rgba(193,68,14,0.05) 42%, transparent 72%),
+    radial-gradient(90% 60% at 50% 96%, rgba(224,141,60,0.055) 0%, transparent 66%),
+    linear-gradient(rgba(8,8,10,0.55) 0%, rgba(11,10,12,0.30) 46%, rgba(16,13,14,0.30) 78%, rgba(12,11,12,0.45) 100%);
+}
+#air-near {         /* in front of the portrait, behind the momiji */
+  --z: -30;
+  background:
+    linear-gradient(to top, rgba(9,9,9,0.98) 0%, rgba(10,10,10,0.72) 7%, rgba(11,11,11,0.28) 15%, transparent 26%),
+    linear-gradient(to top, rgba(12,12,12,0.86) 0%, rgba(12,12,12,0.34) 14%, transparent 42%),
+    radial-gradient(46% 40% at 84% 30%, rgba(193,68,14,0.13) 0%, rgba(193,68,14,0.045) 46%, transparent 74%),
+    radial-gradient(30% 22% at 90% 16%, rgba(224,141,60,0.10) 0%, transparent 70%);
+}
+
+/* ---------------------------------------------------------------- fuji --- */
+#fuji { --z: var(--z-fuji); }
+#fuji picture {
+  width: var(--fuji-w);
+  left: var(--fuji-x);
+  top: var(--fuji-y);
+  /* the render is already blurred and graded in the asset pipeline;
+     nothing here costs a frame */
+  opacity: 0.95;
+  -webkit-mask-image: linear-gradient(to bottom, #000 62%, rgba(0,0,0,0.6) 84%, transparent 100%);
+          mask-image: linear-gradient(to bottom, #000 62%, rgba(0,0,0,0.6) 84%, transparent 100%);
+}
+
+/* -------------------------------------------------------------- pagoda --- */
+#pagoda { --z: var(--z-pagoda); }
+#pagoda picture {
+  width: var(--pagoda-w);
+  left: var(--pagoda-x);
+  top: var(--pagoda-y);
+  opacity: 0.96;
+  -webkit-mask-image: linear-gradient(to bottom, #000 76%, rgba(0,0,0,0.55) 90%, transparent 100%);
+          mask-image: linear-gradient(to bottom, #000 76%, rgba(0,0,0,0.55) 90%, transparent 100%);
+}
+
+/* ------------------------------------------------------------ portrait --- */
+#portrait { --z: var(--z-portrait); }
+#frame {
+  position: absolute;
+  height: var(--portrait-h);
+  aspect-ratio: 4 / 5;
+  left: var(--portrait-x);
+  top: var(--portrait-y);
+  transform: translate(-50%, -50%);
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    linear-gradient(158deg, #262323 0%, #191717 42%, #100f0f 100%);
+  box-shadow:
+    0 0 0 1px rgba(237,237,237,0.10),
+    0 40px 90px -30px rgba(0,0,0,0.95),
+    0 0 120px -50px rgba(193,68,14,0.30);
+}
+/* warm rim from the momiji side, cool fill from the mountain side */
+#frame::before {
+  content: "";
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(255deg, rgba(224,141,60,0.17) 0%, rgba(224,141,60,0.04) 22%, transparent 40%),
+    radial-gradient(130% 90% at 14% 2%, rgba(154,166,196,0.07), transparent 58%);
+}
+#frame::after {           /* the placeholder's own vignette, seats it in the dark */
+  content: "";
+  position: absolute; inset: 0;
+  background: radial-gradient(100% 78% at 50% 40%, transparent 40%, rgba(0,0,0,0.55) 100%);
+}
+#frame .ik {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: clamp(34px, 8.4vh, 96px);
+  font-weight: 300;
+  letter-spacing: 0.06em;
+  color: rgba(237,237,237,0.22);
+  user-select: none;
+}
+#frame .ph {
+  position: absolute; left: 0; right: 0; bottom: 7%;
+  text-align: center;
+  font-size: 9px; letter-spacing: 0.30em; text-transform: uppercase;
+  color: rgba(143,143,143,0.42);
+  user-select: none;
+}
+
+/* ---------------------------------------------------------------- tree --- */
+#tree { --z: var(--z-tree); }
+#tree picture {
+  width: var(--tree-w);
+  left: var(--tree-x);        /* left edge of the RIGHT-anchored image */
+  top: var(--tree-y);
+  transform: translateX(-100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 86%, transparent 100%);
+          mask-image: linear-gradient(to bottom, #000 86%, transparent 100%);
+}
+
+/* --------------------------------------------------------------- leaves --- */
+#leaf-canvas {
+  position: fixed; inset: 0;
+  width: 100%; height: 100%;
+  display: block;
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* ---------------------------------------------------- grade / vignette --- */
+/* Fixed, above everything, never parallaxed: this is the lens, not the world. */
+#grade {
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  background-image:
+    linear-gradient(to bottom, rgba(6,6,6,0.72) 0%, rgba(6,6,6,0.30) 6%, transparent 15%),
+    radial-gradient(124% 90% at 50% 46%, transparent 38%, rgba(0,0,0,0.52) 80%, rgba(0,0,0,0.80) 100%);
+}
+/* The film grain tile is generated into a canvas at boot and pushed in as the
+   FIRST background layer of this same element: one element, three paints, one
+   full-viewport blend instead of two. Zero bytes over the wire. */
+#grade.grained {
+  background-image: var(--grain),
+    linear-gradient(to bottom, rgba(6,6,6,0.72) 0%, rgba(6,6,6,0.30) 6%, transparent 15%),
+    radial-gradient(124% 90% at 50% 46%, transparent 38%, rgba(0,0,0,0.52) 80%, rgba(0,0,0,0.80) 100%);
+}
+
+/* ------------------------------------------------------------------ nav --- */
+nav {
+  position: fixed; z-index: 6;
+  top: 0; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 22px 30px;
+  font-size: 12px;
+  letter-spacing: 0.045em;
+  color: var(--muted);
+  pointer-events: none;
+}
+nav .links { display: flex; gap: 26px; pointer-events: auto; }
+nav a { color: var(--muted); text-decoration: none; transition: color .35s ease; }
+nav a:hover { color: var(--fg); }
+nav .c { opacity: 0.72; }
+
+/* ---------------------------------------------------------------- panel --- */
+/* Dev scaffolding. Stripped at integration. */
+#panel {
+  position: fixed; z-index: 7;
+  left: 18px; bottom: 18px;
+  width: 216px;
+  font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #cfc7bd;
+  background: rgba(16,15,15,0.80);
+  border: 1px solid rgba(255,220,190,0.13);
+  border-radius: 8px;
+  padding: 10px 12px 11px;
+  backdrop-filter: blur(7px);
+  user-select: none;
+}
+#panel h1 { font-size: 10px; margin: 0 0 8px; letter-spacing: .10em;
+            text-transform: uppercase; color: #8d8378; font-weight: 600; }
+#panel .row { display: flex; justify-content: space-between; gap: 8px; }
+#panel .k { color: #7d746a; }
+#panel .v { color: #e8b98d; font-variant-numeric: tabular-nums; }
+#panel input[type=range] { width: 100%; margin: 7px 0 3px; accent-color: #c8562f; }
+#panel .btns { display: flex; gap: 5px; margin-top: 8px; }
+#panel button {
+  flex: 1; font: inherit; font-size: 10px; padding: 3px 0; cursor: pointer;
+  color: #cfc7bd; background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,220,190,0.16); border-radius: 4px;
+}
+#panel button:hover { background: rgba(255,220,190,0.13); }
+#panel .note { margin-top: 8px; color: #5d564e; font-size: 9.5px; line-height: 1.45; }
+
+/* ============================ MOBILE =======================================
+   Not a scale-down. At 390px the four elements cannot all carry meaning, so
+   the frame is re-cut: the momiji owns the top-right and cascades down the
+   right edge, the portrait drops to the lower middle where a thumb is not,
+   Fuji is blown up 2.3x so only the summit and one shoulder are in frame,
+   and the pagoda is demoted to a small silhouette in the bottom-left that
+   the portrait partly occludes — depth cue, not subject.
+   =========================================================================== */
+@media (max-width: 760px), (max-aspect-ratio: 1/1) {
+  :root {
+    --Pn: 900;
+    --z-fuji: -700; --z-pagoda: -340; --z-portrait: -50; --z-tree: 130;
+    /* air-far/-near keep their desktop depths; at P=900 they land between the
+       same pairs of layers, which is the only property that matters */
+    --fuji-w:     300%;  --fuji-x:  -49%;   --fuji-y:   27%;
+    --pagoda-w:    28%;  --pagoda-x:  1%;   --pagoda-y: 72%;
+    --portrait-h:  31%;  --portrait-x: 48%; --portrait-y: 60%;
+    --tree-w:      96%;  --tree-x:  115%;   --tree-y:  -6%;
+    --par-x: 14px; --par-y: 8px; --par-rot: 0.22deg; --par-rot-x: 0.12deg;
+  }
+  #stage { perspective-origin: 50% 42%; }
+  #pagoda picture { opacity: 0.88; }
+  /* no trunk on a phone: the canopy simply dissolves into the night, so the
+     momiji reads as foliage overhanging the frame rather than a potted tree */
+  #tree picture {
+    -webkit-mask-image: linear-gradient(to bottom, #000 54%, rgba(0,0,0,0.45) 65%, transparent 76%);
+            mask-image: linear-gradient(to bottom, #000 54%, rgba(0,0,0,0.45) 65%, transparent 76%);
+  }
+  #air-near { background:
+    linear-gradient(to top, rgba(9,9,9,0.98) 0%, rgba(10,10,10,0.72) 7%, rgba(11,11,11,0.28) 15%, transparent 26%),
+    radial-gradient(60% 28% at 76% 14%, rgba(193,68,14,0.15) 0%, rgba(193,68,14,0.05) 48%, transparent 76%); }
+  nav { padding: 16px 18px; font-size: 11px; }
+  nav .links { gap: 18px; }
+  #panel { left: 10px; right: 10px; bottom: 10px; width: auto; }
+  #grade, #grade.grained { background-image:
+    linear-gradient(to bottom, rgba(6,6,6,0.86) 0%, rgba(6,6,6,0.42) 7%, transparent 17%),
+    radial-gradient(120% 78% at 50% 44%, transparent 38%, rgba(0,0,0,0.44) 80%, rgba(0,0,0,0.74) 100%); }
+  #grade.grained { background-image: var(--grain),
+    linear-gradient(to bottom, rgba(6,6,6,0.86) 0%, rgba(6,6,6,0.42) 7%, transparent 17%),
+    radial-gradient(120% 78% at 50% 44%, transparent 38%, rgba(0,0,0,0.44) 80%, rgba(0,0,0,0.74) 100%); }
+}
+
+/* short landscape phones: keep the crown of the tree in frame */
+@media (max-height: 520px) and (min-aspect-ratio: 1/1) {
+  :root { --tree-w: 42%; --portrait-h: 62%; --pagoda-w: 15%; --pagoda-y: 30%; }
+}
+
+/* ==================== prefers-reduced-motion ===============================
+   No animation at all: no rAF is ever scheduled, the pointer parallax is
+   never bound, and the leaves are drawn once as a still scatter.
+   =========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  #world { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="world">
+    <div class="plane" id="fuji">
+      <picture>
+        <source srcset="a/fuji.avif" type="image/avif">
+        <img src="a/fuji.webp" alt="" width="1500" height="750" decoding="async" fetchpriority="high" draggable="false">
+      </picture>
+    </div>
+
+    <div class="plane scrim" id="air-far"></div>
+
+    <div class="plane" id="pagoda">
+      <picture>
+        <source srcset="a/pagoda.avif" type="image/avif">
+        <img src="a/pagoda.webp" alt="" width="560" height="916" decoding="async" draggable="false">
+      </picture>
+    </div>
+
+    <div class="plane" id="portrait">
+      <div id="frame">
+        <div class="ik">IK</div>
+        <div class="ph">portrait &middot; placeholder</div>
+      </div>
+    </div>
+
+    <div class="plane scrim" id="air-near"></div>
+
+    <div class="plane" id="tree">
+      <picture>
+        <source media="(max-width: 760px), (max-aspect-ratio: 1/1)" type="image/webp"
+                srcset="a/tree_sm.webp 1x, a/tree_md.webp 2x">
+        <source type="image/webp"
+                srcset="a/tree.webp 1x, a/tree_2x.webp 2x">
+        <img src="a/tree.webp" alt="" width="800" height="1019" decoding="async" fetchpriority="high" draggable="false">
+      </picture>
+    </div>
+  </div>
+</div>
+
+<canvas id="leaf-canvas"></canvas>
+<div id="grade"></div>
+
+<nav>
+  <span class="c">&copy; Ilias Kalalou</span>
+  <span class="links">
+    <a href="#">Work</a><a href="#">About</a><a href="#">Contact</a>
+  </span>
+</nav>
+
+<aside id="panel">
+  <h1>hero · css 3d</h1>
+  <div class="row"><span class="k">fps</span><span class="v" id="v-fps">–</span></div>
+  <div class="row"><span class="k">transferred</span><span class="v" id="v-bytes">–</span></div>
+  <div class="row"><span class="k">js heap*</span><span class="v" id="v-heap">n/a</span></div>
+  <div class="row"><span class="k">leaves</span><span class="v" id="v-count">0</span></div>
+  <div class="row"><span class="k">intensity</span><span class="v" id="v-int">0.55</span></div>
+  <input type="range" id="intensity" min="0" max="1.2" step="0.01" value="0.55">
+  <div class="btns">
+    <button id="b-pause">pause</button>
+    <button id="b-par">parallax</button>
+  </div>
+  <div class="note" id="v-note"></div>
+</aside>
+
+<script>
+/* ===========================================================================
+   1. PARALLAX — a real lateral camera dolly inside the CSS perspective.
+
+   #world is INSIDE the element that owns `perspective`, so its translate is
+   projected like everything else. A plane at translateZ(z) is at distance
+   d = P - z from the camera, and a world translate of T moves it on screen
+   by T·P/d. Far planes therefore move less than near ones with no per-layer
+   tuning: at P=1200, Fuji (z=-900) gets 0.57·T and the momiji (z=+170)
+   gets 1.17·T.
+
+   A small counter-rotation is added on top. rotateY(θ) about the world
+   origin displaces a plane by z·sinθ·P/d — negative for planes behind the
+   origin, positive for the one in front — so giving θ the same sign as T
+   pulls the far planes back and pushes the near one further, widening the
+   near/far ratio from 2.0 to 2.7 without any extra travel. It is the move a
+   camera operator makes without thinking: dolly, and pan a little against it.
+   =========================================================================== */
+(function () {
+'use strict';
+
+var reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+var world   = document.getElementById('world');
+var treePic = document.querySelector('#tree picture');
+var frameEl = document.getElementById('frame');
+
+var parEnabled = true;
+var tgX = 0, tgY = 0, curX = 0, curY = 0;     // -1..1
+var parX = 0, parY = 0, parRot = 0, parRotX = 0;   // resolved px / deg
+var Pdepth = 1200, treeZ = 170;
+
+function readVars() {
+  var cs = getComputedStyle(document.documentElement);
+  var p = parseFloat(cs.getPropertyValue('--Pn'));
+  if (p > 0) Pdepth = p;
+  parX = parseFloat(cs.getPropertyValue('--par-x')) || 0;
+  parY = parseFloat(cs.getPropertyValue('--par-y')) || 0;
+  parRot = parseFloat(cs.getPropertyValue('--par-rot')) || 0;
+  parRotX = parseFloat(cs.getPropertyValue('--par-rot-x')) || 0;
+  treeZ = parseFloat(cs.getPropertyValue('--z-tree')) || 170;
+}
+
+/* screen displacement, in px, of a plane at depth z for the current dolly */
+function planeShiftX(z, tx) {
+  var f = Pdepth / (Pdepth - z);
+  var th = (tx / (parX || 1)) * parRot * Math.PI / 180;
+  return tx * f + z * Math.sin(th) * f;
+}
+function planeShiftY(z, ty) {
+  var f = Pdepth / (Pdepth - z);
+  var th = (ty / (parY || 1)) * parRotX * Math.PI / 180;
+  return ty * f - z * Math.sin(th) * f;
+}
+
+var emitDX = 0, emitDY = 0;      /* the momiji's own shift, normalised — the
+                                    leaf emitter follows the tree it hangs on */
+
+function applyParallax() {
+  var tx = -curX * parX, ty = -curY * parY;
+  var ry = (tx / (parX || 1)) * parRot;
+  var rx = -(ty / (parY || 1)) * parRotX;
+  world.style.transform =
+    'translate3d(' + tx.toFixed(2) + 'px,' + ty.toFixed(2) + 'px,0) ' +
+    'rotateY(' + ry.toFixed(4) + 'deg) rotateX(' + rx.toFixed(4) + 'deg)';
+  emitDX = planeShiftX(treeZ, tx) / (window.innerWidth || 1);
+  emitDY = planeShiftY(treeZ, ty) / (window.innerHeight || 1);
+}
+
+function onPointer(e) {
+  if (!parEnabled) return;
+  var w = window.innerWidth || 1, h = window.innerHeight || 1;
+  tgX = (e.clientX / w) * 2 - 1;
+  tgY = (e.clientY / h) * 2 - 1;
+  if (tgX < -1) tgX = -1; else if (tgX > 1) tgX = 1;
+  if (tgY < -1) tgY = -1; else if (tgY > 1) tgY = 1;
+}
+
+function stepParallax(dt) {
+  /* critically-damped-ish exponential ease; 0.16s time constant reads as
+     "the scene has weight" without lagging behind the cursor */
+  var k = 1 - Math.exp(-dt / 0.16);
+  curX += (tgX - curX) * k;
+  curY += (tgY - curY) * k;
+  applyParallax();
+}
+
+/* ---- the emitter rect: measured with the dolly zeroed, so the per-frame
+        offset above is not counted twice ---------------------------------- */
+var treeRect = { x: 0, y: 0, w: 1, h: 1 };
+function measureTree() {
+  if (!treePic) return;
+  var saved = world.style.transform;
+  world.style.transform = 'none';
+  var r = treePic.getBoundingClientRect();
+  world.style.transform = saved;
+  if (r.width > 0) treeRect = { x: r.left, y: r.top, w: r.width, h: r.height };
+}
+
+readVars();
+if (!reduced) {
+  window.addEventListener('pointermove', onPointer, { passive: true });
+  window.addEventListener('pointerleave', function () { tgX = 0; tgY = 0; });
+  /* touch: a single drag tilts the scene, then it returns */
+  window.addEventListener('touchend', function () { tgX = 0; tgY = 0; }, { passive: true });
+}
+
+/* ===========================================================================
+   2. FILM GRAIN — generated into a 96px canvas at boot and used as a tiled
+   background. Zero bytes over the wire, one rasterisation, never animated.
+   =========================================================================== */
+(function () {
+  try {
+    var n = 96, c = document.createElement('canvas');
+    c.width = c.height = n;
+    var g = c.getContext('2d');
+    var img = g.createImageData(n, n), d = img.data, s = 0x2f6e2b1;
+    for (var i = 0; i < d.length; i += 4) {
+      s = (s * 1103515245 + 12345) & 0x7fffffff;
+      var v = 128 + (((s >> 16) & 255) - 128) * 0.75;
+      d[i] = d[i + 1] = d[i + 2] = v;
+      d[i + 3] = 14;              /* the old opacity: 0.055 * 255 */
+    }
+    g.putImageData(img, 0, 0);
+    var grade = document.getElementById('grade');
+    grade.style.setProperty('--grain', 'url(' + c.toDataURL('image/png') + ')');
+    grade.classList.add('grained');
+  } catch (e) { /* grain is a nicety, never a dependency */ }
+})();
+
+/* ===========================================================================
+   3. THE LEAF SYSTEM
+   Lifted from the force-based prototype (leaf_forces/demo.html) with the
+   physics untouched: gravity + quadratic drag + a lift that reverses with
+   the tumble phase, all acting on velocity RELATIVE TO THE AIR, in a
+   divergence-free wind field. The tumble phase also picks the sprite frame,
+   which is why the leaves swim instead of falling.
+
+   Changes made here, and only these:
+     - the emission lobes are expressed in TREE-IMAGE space and mapped onto
+       whatever rectangle the momiji occupies, so they follow the responsive
+       layout and the parallax instead of being hard-coded to the viewport;
+     - the atlas builder respects the source cell size (the sheets ship at
+       512px / 128px cells, not 1024 / 256);
+     - the scaffolding tree drawing is gone; the real tree is behind us.
+   =========================================================================== */
+var leafSystem = (function () {
+'use strict';
+
+var CFG = {
+  MAX_LEAVES: 368,
+  SOFT_CAP:   330,
+  DPR_CAP:      1.5,
+  FIXED_DT:     1 / 120,
+  MAX_FRAME_DT: 0.05,
+  MAX_SUBSTEPS: 8,
+  INTENSITY_TAU: 0.85,
+  WIND_MIN:  0.055, WIND_MAX:  0.55, WIND_EXP:  1.2,
+  TURB_MIN:  0.030, TURB_MAX:  0.185,
+  SPAWN_MIN: 1.15,  SPAWN_MAX: 42.0, SPAWN_EXP: 1.25,
+  SPAWN_GUST_A: 0.55, SPAWN_GUST_B: 0.62,
+  GRAV: 0.50, GRAV_JIT: 0.20,
+  VTERM: 0.175, VTERM_SIGMA: 0.34, VTERM_LO: 0.095, VTERM_HI: 0.340,
+  CD_MIN: 0.25,
+  LIFT_LO: 1.20, LIFT_HI: 3.20,
+  TUMBLE_BASE_LO: 0.50, TUMBLE_BASE_HI: 2.60,
+  TUMBLE_K_LO: 4.0, TUMBLE_K_HI: 14.0, TUMBLE_CAP: 16.0,
+  PAR_LO: 0.58, PAR_HI: 1.30,
+  SIZE_FRAC: 0.030, SIZE_VAR_LO: 0.72, SIZE_VAR_HI: 1.34,
+  GROUND_LO: 0.885, GROUND_HI: 0.995,
+  BOUNCE: 0.18, GROUND_FRIC: 0.55, SETTLE_CALM: 0.60,
+  FADE_DELAY: 0.28, FADE_DUR: 0.95, FADE_JITTER: 0.55,
+  EXIT_MARGIN: 0.07, ALIGN_REF: 0.10, ALIGN_RATE: 6.0
+};
+
+var TWO_PI = Math.PI * 2, HALF_PI = Math.PI * 0.5, INV_TWO_PI = 1 / TWO_PI;
+var CD_MEAN = (1 + CFG.CD_MIN) * 0.5;
+var CD_A = CFG.CD_MIN / CD_MEAN, CD_B = (1 - CFG.CD_MIN) / CD_MEAN;
+
+/* --- emission lobes, in TREE-IMAGE fractions (u right, v down) ------------
+   Weighted toward the outer canopy and the windward (left) flank, because
+   that is where a leaf actually lets go. Mapped to the viewport in
+   rebuildLobes() whenever the layout changes. */
+var TLOBES = [
+  /* u     v     ru    rv    weight */
+  0.46, 0.17, 0.26, 0.11, 0.30,   // amber crown
+  0.24, 0.33, 0.15, 0.13, 0.24,   // left flank, the one facing the wind
+  0.67, 0.28, 0.17, 0.13, 0.24,   // right flank
+  0.42, 0.48, 0.21, 0.09, 0.22    // crimson lower canopy
+];
+var LOBES = new Float64Array(TLOBES.length);
+var LOBE_CDF = new Float64Array(TLOBES.length / 5);
+var EU0 = 0.70, EU1 = 1.05, EV0 = 0.04, EV1 = 0.68;
+(function () {
+  var acc = 0, i;
+  for (i = 0; i < LOBE_CDF.length; i++) { acc += TLOBES[i * 5 + 4]; LOBE_CDF[i] = acc; }
+  for (i = 0; i < LOBE_CDF.length; i++) LOBE_CDF[i] /= acc;
+})();
+
+function rebuildLobes(rect, w, h) {
+  var i, u0 = 9, u1 = -9, v0 = 9, v1 = -9;
+  for (i = 0; i < LOBE_CDF.length; i++) {
+    var cu = (rect.x + TLOBES[i * 5] * rect.w) / w;
+    var cv = (rect.y + TLOBES[i * 5 + 1] * rect.h) / h;
+    var ru = TLOBES[i * 5 + 2] * rect.w / w;
+    var rv = TLOBES[i * 5 + 3] * rect.h / h;
+    LOBES[i * 5] = cu; LOBES[i * 5 + 1] = cv;
+    LOBES[i * 5 + 2] = ru; LOBES[i * 5 + 3] = rv;
+    if (cu - ru < u0) u0 = cu - ru;
+    if (cu + ru > u1) u1 = cu + ru;
+    if (cv - rv < v0) v0 = cv - rv;
+    if (cv + rv > v1) v1 = cv + rv;
+  }
+  EU0 = u0; EU1 = u1; EV0 = v0; EV1 = v1;
+}
+
+/* --- wind field ---------------------------------------------------------- */
+var WAVES = new Float64Array([
+   1.730,  2.310,  0.31700,  0.000,  0.34660,
+   3.910,  2.870, -0.46910,  2.130,  0.09280,
+   6.710,  5.330,  0.73310,  4.370,  0.02567,
+  11.300,  9.130, -1.09370,  1.090,  0.00757
+]);
+var WMOD_DEPTH = new Float64Array([2.60, 2.10, 1.70, 1.30]);
+var WMOD_RATE  = new Float64Array([0.05310, 0.07730, 0.11170, 0.14290]);
+var WMOD_PHASE = new Float64Array([1.77, 4.03, 0.51, 2.99]);
+var wavePhase  = new Float64Array(4);
+var TURB_NORM = 0.72;
+
+function updateWavePhases(t) {
+  for (var i = 0, j = 0; i < 20; i += 5, j++) {
+    wavePhase[j] = WAVES[i + 2] * t + WAVES[i + 3] +
+                   WMOD_DEPTH[j] * Math.sin(WMOD_RATE[j] * t + WMOD_PHASE[j]);
+  }
+}
+
+var windOutX = 0, windOutY = 0;
+
+function groundProfile(v) {
+  var d = (1 - v) * 6.6666667;
+  var s = d <= 0 ? 0 : (d >= 1 ? 1 : d * d * (3 - 2 * d));
+  return 0.07 + 0.93 * s * (0.82 + 0.30 * (1 - v));
+}
+function gustAt(t) {
+  return 0.62 + 0.38 * (
+    0.23 * Math.sin(0.13370 * t + 0.67) +
+    0.21 * Math.sin(0.19910 * t + 1.31) +
+    0.19 * Math.sin(0.31730 * t + 4.11) +
+    0.15 * Math.sin(0.49870 * t + 2.23) +
+    0.12 * Math.sin(0.80090 * t + 5.02) +
+    0.10 * Math.sin(1.29310 * t + 3.44));
+}
+function sampleWind(u, v, t, mU, turb) {
+  var cx = 0, cy = 0, i, j, c;
+  for (i = 0, j = 0; i < 20; i += 5, j++) {
+    c = Math.cos(WAVES[i] * u + WAVES[i + 1] * v + wavePhase[j]) * WAVES[i + 4];
+    cx += WAVES[i + 1] * c;
+    cy -= WAVES[i] * c;
+  }
+  var prof = groundProfile(v);
+  var tp = turb * TURB_NORM * prof;
+  windOutX = -mU * prof * gustNow + cx * tp;
+  windOutY = cy * tp;
+}
+
+/* --- prng ---------------------------------------------------------------- */
+var rngState = 0x8f1bbcdc;
+function rnd() {
+  rngState = (rngState + 0x6D2B79F5) | 0;
+  var t = rngState;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+function gauss() { return (rnd() + rnd() + rnd() - 1.5) * 2; }
+function rrange(a, b) { return a + (b - a) * rnd(); }
+
+/* --- pool (structure of arrays, allocated once) --------------------------- */
+var N = CFG.MAX_LEAVES;
+var ST_FREE = 0, ST_FLY = 1, ST_SETTLE = 2;
+var pX = new Float32Array(N), pY = new Float32Array(N);
+var pVX = new Float32Array(N), pVY = new Float32Array(N);
+var pPhi = new Float32Array(N), pTheta = new Float32Array(N);
+var pK = new Float32Array(N), pG = new Float32Array(N), pLift = new Float32Array(N);
+var pTumbB = new Float32Array(N), pTumbK = new Float32Array(N), pTumbS = new Float32Array(N);
+var pSpin = new Float32Array(N), pAlignO = new Float32Array(N), pPar = new Float32Array(N);
+var pSize = new Float32Array(N), pAlpha = new Float32Array(N), pGround = new Float32Array(N);
+var pSettle = new Float32Array(N), pFadeMul = new Float32Array(N), pAge = new Float32Array(N);
+var pFlip = new Int8Array(N), pSheet = new Uint8Array(N), pBand = new Uint8Array(N);
+var pState = new Uint8Array(N);
+var freeList = new Int32Array(N), freeCount = N;
+var activeIdx = new Int32Array(N), activeCount = 0;
+var slotAt = new Int32Array(N);
+(function () { for (var i = 0; i < N; i++) { freeList[i] = i; pState[i] = ST_FREE; } })();
+updateWavePhases(0);
+
+var W = 1, H = 1, DPR = 1, REF = 1;
+var simTime = 0, gustNow = 1;
+var intensityTarget = 0.55, intensityEff = 0.55;
+var meanU = 0, turbAmp = 0;
+var spawnAccum = 0, spawnThreshold = 1;
+var paused = false;
+
+function activate(i) { slotAt[i] = activeCount; activeIdx[activeCount++] = i; }
+function deactivate(slot) {
+  var i = activeIdx[slot];
+  var last = activeIdx[--activeCount];
+  activeIdx[slot] = last; slotAt[last] = slot;
+  pState[i] = ST_FREE;
+  freeList[freeCount++] = i;
+}
+
+function spawnLeaf() {
+  if (freeCount === 0 || activeCount >= CFG.SOFT_CAP) return -1;
+  var i = freeList[--freeCount];
+  var bu = 0, bv = 0, bw = 1e9, c, r, a, li, u, v;
+  for (c = 0; c < 2; c++) {
+    r = rnd();
+    for (li = 0; li < LOBE_CDF.length - 1; li++) { if (r < LOBE_CDF[li]) break; }
+    a = rnd() * TWO_PI;
+    r = Math.pow(rnd(), 0.62);
+    u = LOBES[li * 5] + LOBES[li * 5 + 2] * r * Math.cos(a);
+    v = LOBES[li * 5 + 1] + LOBES[li * 5 + 3] * r * Math.sin(a);
+    if (u < EU0) u = EU0; else if (u > EU1) u = EU1;
+    if (v < EV0) v = EV0; else if (v > EV1) v = EV1;
+    sampleWind(u, v, simTime, meanU, turbAmp);
+    if (windOutX < bw) { bw = windOutX; bu = u; bv = v; }
+  }
+  var d = 0.5 * (rnd() + rnd());
+  var par = CFG.PAR_LO + (CFG.PAR_HI - CFG.PAR_LO) * d;
+  var vt = CFG.VTERM * Math.exp(CFG.VTERM_SIGMA * gauss());
+  if (vt < CFG.VTERM_LO) vt = CFG.VTERM_LO; else if (vt > CFG.VTERM_HI) vt = CFG.VTERM_HI;
+  var g0 = CFG.GRAV * (1 - CFG.GRAV_JIT * 0.5 + CFG.GRAV_JIT * rnd());
+  var k0 = g0 / (vt * vt);
+
+  pX[i] = bu + emitDX; pY[i] = bv + emitDY;
+  pVX[i] = (-0.05 * rnd() * meanU + 0.012 * gauss()) * par;
+  pVY[i] = (0.010 + 0.020 * gauss()) * par;
+  pK[i] = k0 / par; pG[i] = g0 * par; pPar[i] = par;
+  pLift[i] = rrange(CFG.LIFT_LO, CFG.LIFT_HI);
+  pTumbB[i] = rrange(CFG.TUMBLE_BASE_LO, CFG.TUMBLE_BASE_HI);
+  pTumbK[i] = rrange(CFG.TUMBLE_K_LO, CFG.TUMBLE_K_HI);
+  pTumbS[i] = rnd() < 0.5 ? -1 : 1;
+  pSpin[i] = rrange(-1.6, 1.6);
+  pAlignO[i] = gauss() * 0.5;
+  pPhi[i] = rnd() * TWO_PI; pTheta[i] = rnd() * TWO_PI;
+  pSize[i] = CFG.SIZE_FRAC * rrange(CFG.SIZE_VAR_LO, CFG.SIZE_VAR_HI) * par;
+  pAlpha[i] = (0.42 + 0.58 * d) * rrange(0.80, 1.0);
+  pGround[i] = CFG.GROUND_LO + (CFG.GROUND_HI - CFG.GROUND_LO) * d + 0.012 * (rnd() - 0.5);
+  pFlip[i] = rnd() < 0.5 ? -1 : 1;
+  pSheet[i] = (rnd() * 3) | 0;
+  pBand[i] = d < 0.34 ? 0 : (d < 0.67 ? 1 : 2);
+  pFadeMul[i] = 1 + CFG.FADE_JITTER * (rnd() - 0.5);
+  pSettle[i] = 0; pAge[i] = 0; pState[i] = ST_FLY;
+  activate(i);
+  return i;
+}
+
+function step(dt) {
+  simTime += dt;
+  gustNow = gustAt(simTime);
+  updateWavePhases(simTime);
+  intensityEff += (intensityTarget - intensityEff) * (1 - Math.exp(-dt / CFG.INTENSITY_TAU));
+  var ip = Math.pow(intensityEff, CFG.WIND_EXP);
+  meanU = CFG.WIND_MIN + (CFG.WIND_MAX - CFG.WIND_MIN) * ip;
+  turbAmp = CFG.TURB_MIN + (CFG.TURB_MAX - CFG.TURB_MIN) * intensityEff;
+
+  var rate = (CFG.SPAWN_MIN + CFG.SPAWN_MAX * Math.pow(intensityEff, CFG.SPAWN_EXP))
+             * (CFG.SPAWN_GUST_A + CFG.SPAWN_GUST_B * gustNow);
+  spawnAccum += rate * dt;
+  while (spawnAccum >= spawnThreshold) {
+    spawnAccum -= spawnThreshold;
+    spawnThreshold = -Math.log(1 - rnd() * 0.999999);
+    spawnLeaf();
+  }
+
+  var margin = CFG.EXIT_MARGIN;
+  for (var s = 0; s < activeCount; s++) {
+    var i = activeIdx[s];
+    var par = pPar[i], k = pK[i];
+    var x = pX[i], y = pY[i], vx = pVX[i], vy = pVY[i];
+    pAge[i] += dt;
+
+    sampleWind(x, y, simTime, meanU, turbAmp);
+    var wx = windOutX * par, wy = windOutY * par;
+    var rvx = vx - wx, rvy = vy - wy;
+    var spd = Math.sqrt(rvx * rvx + rvy * rvy);
+
+    var settleMul = 1;
+    if (pState[i] === ST_SETTLE) {
+      settleMul = 1 - pSettle[i] / CFG.SETTLE_CALM;
+      if (settleMul < 0) settleMul = 0;
+    }
+    var om = pTumbS[i] * (pTumbB[i] + pTumbK[i] * spd / par) * settleMul;
+    if (om > CFG.TUMBLE_CAP) om = CFG.TUMBLE_CAP;
+    else if (om < -CFG.TUMBLE_CAP) om = -CFG.TUMBLE_CAP;
+    var phi = pPhi[i] + om * dt;
+    if (phi > 1e6 || phi < -1e6) phi = phi % TWO_PI;
+    pPhi[i] = phi;
+
+    var psi = phi - HALF_PI;
+    var sa = Math.sin(psi), ca = Math.cos(psi);
+    var cd = CD_A + CD_B * sa * sa;
+    var cl = pLift[i] * 2 * sa * ca * settleMul;
+
+    var kd = k * spd;
+    var ax = -kd * cd * rvx + kd * cl * (-rvy);
+    var ay = -kd * cd * rvy + kd * cl * (rvx) + pG[i];
+
+    vx += ax * dt; vy += ay * dt;
+    x += vx * dt;  y += vy * dt;
+
+    var align = spd / (spd + CFG.ALIGN_REF);
+    var want = Math.atan2(rvy, rvx) + pAlignO[i];
+    var dA = want - pTheta[i];
+    dA -= TWO_PI * Math.floor((dA + Math.PI) * INV_TWO_PI);
+    var f = CFG.ALIGN_RATE * align * dt;
+    if (f > 1) f = 1;
+    pTheta[i] += dA * f + pSpin[i] * (1 - 0.85 * align) * dt;
+
+    var gy = pGround[i];
+    if (y >= gy) {
+      y = gy;
+      if (vy > 0) vy = -vy * CFG.BOUNCE;
+      vx *= Math.exp(-CFG.GROUND_FRIC * 12 * dt);
+      if (pState[i] === ST_FLY) pState[i] = ST_SETTLE;
+    }
+    if (pState[i] === ST_SETTLE) pSettle[i] += dt;
+
+    pX[i] = x; pY[i] = y; pVX[i] = vx; pVY[i] = vy;
+
+    var dead = 0;
+    if (x < -margin) dead = 1;
+    else if (x > 1 + margin || y < -margin || y > 1 + margin) dead = 1;
+    else if (pState[i] === ST_SETTLE &&
+             pSettle[i] > (CFG.FADE_DELAY + CFG.FADE_DUR) * pFadeMul[i]) dead = 1;
+    else if (!(x === x) || !(y === y)) dead = 1;
+    if (dead) { deactivate(s); s--; }
+  }
+}
+
+/* --- sprite sheets -------------------------------------------------------- */
+var SHEET_SRC = ['a/leaf_ember.webp', 'a/leaf_crimson.webp', 'a/leaf_amber.webp'];
+var sheets = [null, null, null];
+var atlas = [null, null, null];
+var srcCell = 128, atlasCell = 128, atlasBuiltFor = -1, sheetsLoaded = 0;
+var onSheetsReady = null;
+
+function loadSheets() {
+  for (var i = 0; i < 3; i++) {
+    (function (idx) {
+      var img = new Image();
+      img.onload = function () {
+        sheets[idx] = img; atlas[idx] = img; sheetsLoaded++;
+        srcCell = (img.width / 4) | 0;
+        buildAtlas();
+        if (onSheetsReady) onSheetsReady();
+      };
+      img.onerror = function () { sheetsLoaded++; };
+      img.src = SHEET_SRC[idx];
+    })(i);
+  }
+}
+
+function buildAtlas() {
+  /* Draw from a cell no larger than we need: a 128px cell scaled to a 45px
+     leaf every frame is both slower and uglier than a pre-filtered 64px one.
+     Never exceed the source cell, whatever the sheet ships at. */
+  var maxLeafPx = CFG.SIZE_FRAC * CFG.SIZE_VAR_HI * CFG.PAR_HI * REF * DPR * 1.35;
+  var cell = 64;
+  while (cell < maxLeafPx && cell < srcCell) cell *= 2;
+  if (cell > srcCell) cell = srcCell;
+  if (cell === atlasCell && atlasBuiltFor === sheetsLoaded) return;
+  for (var i = 0; i < 3; i++) {
+    if (!sheets[i]) continue;
+    if (cell >= srcCell) { atlas[i] = sheets[i]; continue; }
+    try {
+      var cv = document.createElement('canvas');
+      cv.width = cell * 4; cv.height = cell * 4;
+      var c2 = cv.getContext('2d');
+      if (!c2) { atlas[i] = sheets[i]; continue; }
+      c2.imageSmoothingEnabled = true;
+      if ('imageSmoothingQuality' in c2) c2.imageSmoothingQuality = 'high';
+      var mid = cell * 8;
+      if (mid < srcCell * 4) {
+        var tmp = document.createElement('canvas');
+        tmp.width = tmp.height = mid;
+        var t2 = tmp.getContext('2d');
+        t2.imageSmoothingEnabled = true;
+        if ('imageSmoothingQuality' in t2) t2.imageSmoothingQuality = 'high';
+        t2.drawImage(sheets[i], 0, 0, mid, mid);
+        c2.drawImage(tmp, 0, 0, cell * 4, cell * 4);
+      } else {
+        c2.drawImage(sheets[i], 0, 0, cell * 4, cell * 4);
+      }
+      atlas[i] = cv;
+    } catch (e) { atlas[i] = sheets[i]; }
+  }
+  atlasCell = cell;
+  atlasBuiltFor = sheetsLoaded;
+}
+
+/* --- draw ----------------------------------------------------------------- */
+var canvas = document.getElementById('leaf-canvas');
+var ctx = canvas ? canvas.getContext('2d') : null;
+
+function resize() {
+  var w = window.innerWidth || 1280, h = window.innerHeight || 800;
+  DPR = Math.min(window.devicePixelRatio || 1, CFG.DPR_CAP);
+  W = w; H = h; REF = Math.sqrt(w * h);
+  if (canvas) {
+    canvas.width = Math.round(w * DPR);
+    canvas.height = Math.round(h * DPR);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+  }
+  if (ctx) {
+    ctx.imageSmoothingEnabled = true;
+    if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+  }
+  buildAtlas();
+}
+
+function drawLeaves() {
+  var cell = atlasCell || 128;
+  var inset = cell >= srcCell ? 1 : 0.5;
+  var src = cell - inset * 2;
+  for (var band = 0; band < 3; band++) {
+    for (var s = 0; s < activeCount; s++) {
+      var i = activeIdx[s];
+      if (pBand[i] !== band) continue;
+      var img = atlas[pSheet[i]];
+      if (!img) continue;
+      var a = pAlpha[i];
+      if (pState[i] === ST_SETTLE) {
+        var fm = pFadeMul[i];
+        var ft = pSettle[i] - CFG.FADE_DELAY * fm;
+        if (ft > 0) {
+          var u = 1 - ft / (CFG.FADE_DUR * fm);
+          if (u <= 0) continue;
+          a *= u * u * (3 - 2 * u);
+        }
+      }
+      if (a <= 0.004) continue;
+      var f = pPhi[i] * INV_TWO_PI;
+      f -= Math.floor(f);
+      var fi = (f * 16) | 0; if (fi > 15) fi = 15;
+      var sz = pSize[i] * REF, half = sz * 0.5;
+      var th = pTheta[i], co = Math.cos(th), si = Math.sin(th), fl = pFlip[i];
+      ctx.globalAlpha = a;
+      ctx.setTransform(co * fl * DPR, si * fl * DPR, -si * DPR, co * DPR,
+                       pX[i] * W * DPR, pY[i] * H * DPR);
+      ctx.drawImage(img, (fi & 3) * cell + inset, (fi >> 2) * cell + inset, src, src,
+                    -half, -half, sz, sz);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+function render() {
+  if (!ctx) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawLeaves();
+}
+
+function drawStatic() {
+  /* prefers-reduced-motion: one still frame, no rAF ever. The leaves are
+     placed along the drift line the simulation would have produced -- a sag
+     from the canopy to the lower left -- rather than at random, and each is
+     given a near face-on tumble phase so every one of them reads as a leaf
+     instead of an edge-on sliver. */
+  if (!ctx) return;
+  while (activeCount > 0) deactivate(0);
+  simTime = 0; gustNow = 1; meanU = 0.30; turbAmp = 0.08;
+  var NST = 14, u0 = (EU0 + EU1) * 0.5, v0 = (EV0 + EV1) * 0.5;
+  for (var n = 0; n < NST; n++) {
+    var i = spawnLeaf();
+    if (i < 0) break;
+    var t = (n + 0.35) / NST;
+    var e = Math.pow(t, 0.82);
+    pX[i] = u0 - (u0 + 0.05) * e + 0.035 * gauss();
+    pY[i] = v0 + (0.86 - v0) * (0.25 * e + 0.75 * e * e) + 0.045 * gauss();
+    if (pY[i] > 0.965) pY[i] = 0.965;
+    pPhi[i] = (rnd() < 0.5 ? 0 : Math.PI) + gauss() * 0.34;
+    pTheta[i] = rnd() * TWO_PI;
+    pAlpha[i] *= 0.86 + 0.3 * rnd();
+  }
+  render();
+}
+
+return {
+  cfg: CFG,
+  resize: resize,
+  step: step,
+  render: render,
+  drawStatic: drawStatic,
+  loadSheets: loadSheets,
+  rebuildLobes: rebuildLobes,
+  onReady: function (fn) { onSheetsReady = fn; },
+  count: function () { return activeCount; },
+  setIntensity: function (v, immediate) {
+    v = +v;
+    if (!(v >= 0)) v = 0;
+    if (v > 1.6) v = 1.6;
+    intensityTarget = v;
+    if (immediate) intensityEff = v;
+  },
+  getIntensity: function () { return intensityTarget; },
+  setPaused: function (p) { paused = !!p; },
+  isPaused: function () { return paused; },
+  setEmitOffset: function (dx, dy) { emitDX = dx; emitDY = dy; }
+};
+})();
+
+/* ===========================================================================
+   4. ONE FRAME LOOP for both the parallax and the leaves.
+   =========================================================================== */
+var running = false, rafId = 0, lastTs = 0, acc = 0;
+var fpsEma = 60, fpsAcc = 0, framesSeen = 0;
+/* dev instrumentation: main-thread time spent inside this frame's own work.
+   Two performance.now() calls; removed with the panel at integration. */
+var workRing = new Float32Array(240), workAt = 0, workN = 0;
+var leavesPaused = false, userPaused = false, docHidden = !!document.hidden;
+var CFG = leafSystem.cfg;
+
+function relayout() {
+  leafSystem.resize();
+  measureTree();
+  leafSystem.rebuildLobes(treeRect, window.innerWidth || 1, window.innerHeight || 1);
+  if (reduced) leafSystem.drawStatic();
+}
+
+function frame(ts) {
+  rafId = window.requestAnimationFrame(frame);
+  var raw = (ts - lastTs) / 1000;
+  lastTs = ts;
+  if (!(raw > 0)) raw = 0;
+  if (raw > CFG.MAX_FRAME_DT) raw = CFG.MAX_FRAME_DT;
+  fpsEma += ((raw > 0.0005 ? 1 / raw : 60) - fpsEma) * 0.08;
+  framesSeen++;
+
+  var __t0 = performance.now();
+  if (parEnabled) stepParallax(raw);
+  leafSystem.setEmitOffset(emitDX, emitDY);
+
+  if (!leavesPaused) {
+    acc += raw;
+    var n = 0;
+    while (acc >= CFG.FIXED_DT && n < CFG.MAX_SUBSTEPS) {
+      leafSystem.step(CFG.FIXED_DT); acc -= CFG.FIXED_DT; n++;
+    }
+    if (n === CFG.MAX_SUBSTEPS) acc = 0;
+    leafSystem.render();
+  }
+
+  workRing[workAt] = performance.now() - __t0;
+  workAt = (workAt + 1) % workRing.length;
+  if (workN < workRing.length) workN++;
+
+  fpsAcc += raw;
+  if (fpsAcc > 0.25) { fpsAcc = 0; updatePanel(); }
+}
+
+function start() {
+  if (running || reduced || docHidden || userPaused) return;
+  running = true;
+  lastTs = (window.performance && performance.now) ? performance.now() : Date.now();
+  acc = 0;
+  rafId = window.requestAnimationFrame(frame);
+}
+function stop() {
+  if (!running) return;
+  running = false;
+  if (rafId) window.cancelAnimationFrame(rafId);
+  rafId = 0;
+}
+
+document.addEventListener('visibilitychange', function () {
+  docHidden = !!document.hidden;
+  if (docHidden) stop(); else start();
+});
+window.addEventListener('resize', function () { readVars(); relayout(); });
+window.addEventListener('orientationchange', function () { readVars(); relayout(); });
+
+/* ===========================================================================
+   5. PANEL — dev only, stripped at integration.
+   =========================================================================== */
+var elFps = document.getElementById('v-fps');
+var elBytes = document.getElementById('v-bytes');
+var elHeap = document.getElementById('v-heap');
+var elCount = document.getElementById('v-count');
+var elInt = document.getElementById('intensity');
+var elVInt = document.getElementById('v-int');
+var elNote = document.getElementById('v-note');
+
+function bytesTransferred() {
+  var total = 0, i, e;
+  try {
+    var nav = performance.getEntriesByType('navigation');
+    for (i = 0; i < nav.length; i++) total += nav[i].transferSize || 0;
+    var res = performance.getEntriesByType('resource');
+    for (i = 0; i < res.length; i++) { e = res[i]; total += e.transferSize || 0; }
+  } catch (err) { return -1; }
+  return total;
+}
+function fmt(n) {
+  if (n < 0) return 'n/a';
+  return n < 1024 ? n + ' B'
+       : n < 1048576 ? (n / 1024).toFixed(1) + ' KB'
+       : (n / 1048576).toFixed(2) + ' MB';
+}
+function updatePanel() {
+  if (elFps) elFps.textContent = reduced ? 'static' : fpsEma.toFixed(0);
+  if (elBytes) elBytes.textContent = fmt(bytesTransferred());
+  if (elCount) elCount.textContent = leafSystem.count();
+  if (elHeap && performance && performance.memory) {
+    /* Chrome quantises performance.memory to 10 MB buckets unless the page is
+       cross-origin isolated, so this reads high; the exact figure in NOTES.md
+       comes from CDP Runtime.getHeapUsage (1.37 MB). */
+    elHeap.textContent = '~' + (performance.memory.usedJSHeapSize / 1048576).toFixed(1) + ' MB';
+  }
+}
+if (elInt) {
+  elInt.addEventListener('input', function () {
+    leafSystem.setIntensity(elInt.value);
+    if (elVInt) elVInt.textContent = (+elInt.value).toFixed(2);
+  });
+}
+document.getElementById('b-pause').addEventListener('click', function () {
+  if (leavesPaused) { window.heroDemo.resume(); this.textContent = 'pause'; }
+  else { window.heroDemo.pause(); this.textContent = 'resume'; }
+});
+document.getElementById('b-par').addEventListener('click', function () {
+  parEnabled = !parEnabled;
+  this.style.opacity = parEnabled ? '1' : '0.45';
+  if (!parEnabled) { tgX = tgY = curX = curY = 0; applyParallax(); }
+});
+
+/* ===========================================================================
+   6. PUBLIC API
+   =========================================================================== */
+window.heroDemo = {
+  setIntensity: function (v) {
+    leafSystem.setIntensity(v);
+    if (elInt) elInt.value = leafSystem.getIntensity();
+    if (elVInt) elVInt.textContent = leafSystem.getIntensity().toFixed(2);
+  },
+  /** Stop everything: the leaf simulation AND the pointer parallax. The rAF
+   *  loop is cancelled, so a paused hero costs exactly nothing. Idempotent. */
+  pause: function () {
+    userPaused = true; leavesPaused = true; leafSystem.setPaused(true);
+    stop();
+    if (elFps) elFps.textContent = 'paused';
+  },
+  /** Restart with no time jump. Idempotent; a no-op under reduced motion. */
+  resume: function () {
+    userPaused = false; leavesPaused = false; leafSystem.setPaused(false);
+    acc = 0; lastTs = performance.now(); start();
+  },
+  /* not part of the contract, used by the measurement harness */
+  _dev: {
+    fps: function () { return fpsEma; },
+    frameWork: function () {
+      if (!workN) return null;
+      var a = Array.prototype.slice.call(workRing, 0, workN).sort(function (x, y) { return x - y; });
+      var sum = 0;
+      for (var i = 0; i < a.length; i++) sum += a[i];
+      return { n: a.length, mean: +(sum / a.length).toFixed(3),
+               p50: +a[(a.length * 0.5) | 0].toFixed(3),
+               p95: +a[(a.length * 0.95) | 0].toFixed(3),
+               max: +a[a.length - 1].toFixed(3) };
+    },
+    resetWork: function () { workN = 0; workAt = 0; },
+    frames: function () { return framesSeen; },
+    count: function () { return leafSystem.count(); },
+    bytes: bytesTransferred,
+    setPointer: function (nx, ny) { tgX = nx; tgY = ny; },
+    settleParallax: function () { curX = tgX; curY = tgY; applyParallax(); },
+    parallaxState: function () { return { curX: curX, curY: curY, P: Pdepth,
+                                          parX: parX, parRot: parRot }; },
+    treeRect: function () { return treeRect; },
+    reduced: reduced,
+    parallaxEnabled: function () { return parEnabled; }
+  }
+};
+
+/* ------------------------------------------------------------------- boot */
+leafSystem.onReady(function () { if (reduced) leafSystem.drawStatic(); });
+leafSystem.loadSheets();
+relayout();
+applyParallax();
+if (elNote) {
+  elNote.textContent = reduced
+    ? 'prefers-reduced-motion: static frame, no rAF, no parallax.'
+    : 'window.heroDemo.setIntensity(0..1.2)';
+}
+if (reduced) {
+  leafSystem.drawStatic();
+} else {
+  /* one relayout after the images have decoded, so the emitter matches the
+     rectangle the tree actually ended up occupying */
+  window.addEventListener('load', relayout);
+  start();
+}
+
+})();
+</script>
+</body>
+</html>

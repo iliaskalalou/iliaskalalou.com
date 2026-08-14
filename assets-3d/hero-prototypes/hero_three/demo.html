@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hero — three.js, real geometry</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --fg: #ededed;
+    --muted: #8f8f8f;
+    --ember: #C1440E;
+    --amber: #E08D3C;
+    --bg: #0c0c0c;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  #gl {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    display: block;
+    opacity: 0;
+    transition: opacity .9s ease;
+  }
+  body.loaded #gl { opacity: 1; }
+
+  /* ------------------------------------------------- minimal top nav bar */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 4;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 22px clamp(20px, 4vw, 54px);
+    font: 400 13px/1 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Helvetica, Arial, sans-serif;
+    letter-spacing: .02em;
+    pointer-events: none;
+  }
+  nav .mark { color: var(--muted); }
+  nav ul { display: flex; gap: clamp(18px, 2.6vw, 34px); list-style: none; margin: 0; padding: 0; }
+  nav a { color: var(--muted); text-decoration: none; pointer-events: auto; transition: color .25s; }
+  nav a:hover { color: var(--fg); }
+  @media (max-width: 520px) {
+    nav { padding: 16px 18px; font-size: 12px; }
+    nav .mark { font-size: 11px; }
+  }
+
+  /* -------------------------------------- fallback for no-WebGL2 / context loss */
+  #fallback {
+    position: fixed; inset: 0; z-index: 6;
+    background: var(--bg) center/cover no-repeat url("assets/fallback.webp");
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  #fallback[hidden] { display: none; }
+  #fallback-msg {
+    margin: 0 0 34px; padding: 9px 15px;
+    font: 400 12px/1.5 ui-sans-serif, -apple-system, Helvetica, Arial, sans-serif;
+    color: var(--muted); background: rgba(12,12,12,.72);
+    border: 1px solid rgba(237,237,237,.10); border-radius: 6px;
+    max-width: 34em; text-align: center;
+  }
+
+  /* ---------------- dev scaffolding only: stripped before this ships ------ */
+  #panel {
+    position: fixed; top: 62px; left: 14px; z-index: 10;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #cfc7bd;
+    background: rgba(18,17,16,0.82);
+    border: 1px solid rgba(255,220,190,0.14);
+    border-radius: 8px;
+    padding: 11px 13px 12px;
+    width: 226px;
+    backdrop-filter: blur(6px);
+    user-select: none;
+  }
+  #panel h1 { font-size: 11px; margin: 0 0 9px; letter-spacing: .09em;
+               text-transform: uppercase; color: #8d8378; font-weight: 600; }
+  #panel .row { display: flex; justify-content: space-between; gap: 8px; }
+  #panel .k { color: #7d746a; }
+  #panel .v { color: #e8b98d; font-variant-numeric: tabular-nums; }
+  #intensity { width: 100%; margin: 8px 0 4px; accent-color: #c8562f; }
+  #panel .btns { display: flex; gap: 5px; margin-top: 9px; }
+  #panel button {
+    flex: 1; font: inherit; font-size: 11px; padding: 3px 0; cursor: pointer;
+    color: #cfc7bd; background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,220,190,0.16); border-radius: 4px;
+  }
+  #panel button:hover { background: rgba(255,220,190,0.13); }
+  @media (max-width: 520px) { #panel { transform: scale(.86); transform-origin: top left; } }
+</style>
+</head>
+<body>
+
+<canvas id="gl"></canvas>
+
+<nav>
+  <span class="mark">© Ilias Kalalou</span>
+  <ul>
+    <li><a href="#work">Work</a></li>
+    <li><a href="#about">About</a></li>
+    <li><a href="#contact">Contact</a></li>
+  </ul>
+</nav>
+
+<div id="fallback" hidden>
+  <p id="fallback-msg"></p>
+</div>
+
+<div id="panel">
+  <h1>three.js hero</h1>
+  <div class="row"><span class="k">intensity</span><span class="v" id="v-int">0.55</span></div>
+  <input type="range" id="intensity" min="0" max="1.2" step="0.01" value="0.55">
+  <div class="row"><span class="k">fps</span><span class="v" id="v-fps">–</span></div>
+  <div class="row"><span class="k">transferred</span><span class="v" id="v-bytes">–</span></div>
+  <div class="row"><span class="k">js heap</span><span class="v" id="v-heap">–</span></div>
+  <div class="row"><span class="k">draw / tris</span><span class="v" id="v-calls">–</span></div>
+  <div class="row"><span class="k">live leaves</span><span class="v" id="v-count">0</span></div>
+  <div class="row"><span class="k">viewport</span><span class="v" id="v-vp">–</span></div>
+  <div class="btns">
+    <button id="b-0">0</button>
+    <button id="b-35">.35</button>
+    <button id="b-1">1.0</button>
+    <button id="b-12">1.2</button>
+  </div>
+  <div class="btns"><button id="b-pause">pause</button></div>
+</div>
+
+<script type="module" src="hero.js"></script>
+</body>
+</html>
