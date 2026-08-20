@@ -73,7 +73,7 @@ export default function HeroStage() {
           transition={{ duration: 1.1, ease: EASE, delay: 0.15 }}
           className="relative mx-auto w-full max-w-[520px]"
         >
-          <div className="relative aspect-[4/5] overflow-hidden rounded-[2px] bg-[#efece7]">
+          <div className="relative aspect-[4/5]">
             <Image
               src="/ilias.webp"
               alt="Ilias Kalalou"
