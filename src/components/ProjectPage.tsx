@@ -33,7 +33,7 @@ export default function ProjectPage({ project }: { project: Project }) {
         };
 
   return (
-    <main className="min-h-svh px-6 pb-24 pt-8 md:px-12 md:pb-32">
+    <main className="min-h-svh px-6 pb-14 pt-8 md:px-12 md:pb-16">
       <header className="mx-auto flex max-w-[1100px] items-baseline justify-between">
         <Link
           href="/"
@@ -138,7 +138,7 @@ export default function ProjectPage({ project }: { project: Project }) {
           </motion.section>
         ))}
 
-        <div className="mt-24 border-t border-line pt-10 md:mt-32">
+        <div className="mt-24 border-t border-line pt-10 md:mt-28">
           <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
             Next
           </span>

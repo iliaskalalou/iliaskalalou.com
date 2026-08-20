@@ -88,7 +88,7 @@ export default function Home() {
 
       <section
         id="contact"
-        className="scroll-mt-24 flex min-h-[70svh] flex-col justify-center px-6 py-24 md:px-12"
+        className="scroll-mt-24 px-6 pt-24 pb-12 md:px-12 md:pt-28"
       >
         <Reveal>
           <p className="mb-6 text-sm uppercase tracking-[0.25em] text-muted">
@@ -126,7 +126,7 @@ export default function Home() {
             </Magnetic>
           </div>
         </Reveal>
-        <p className="mt-24 text-xs text-muted">
+        <p className="mt-20 text-xs text-muted">
           © 2026 Ilias Kalalou · Built from scratch with Next.js
         </p>
       </section>
