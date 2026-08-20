@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 
@@ -7,6 +8,7 @@ const EASE = [0.16, 1, 0.3, 1] as const;
 
 export type Fact = { label: string; value: string };
 export type Section = { heading: string; body: string[] };
+export type Shot = { src: string; caption: string; width: number; height: number; wide?: boolean };
 
 export type Project = {
   index: string;
@@ -14,6 +16,7 @@ export type Project = {
   lead: string;
   facts: Fact[];
   sections: Section[];
+  shots?: Shot[];
   external?: { label: string; href: string };
   next: { title: string; href: string };
 };
@@ -71,6 +74,38 @@ export default function ProjectPage({ project }: { project: Project }) {
             </div>
           ))}
         </motion.dl>
+
+
+        {project.shots?.length ? (
+          <section className="mt-20 md:mt-24">
+            <div className="grid gap-6 md:grid-cols-2 md:gap-8">
+              {project.shots.map((shot) => (
+                <motion.figure
+                  key={shot.src}
+                  initial={still ? false : { y: 26 }}
+                  whileInView={still ? undefined : { y: 0 }}
+                  viewport={{ once: true, margin: "0px 0px -12% 0px" }}
+                  transition={still ? { duration: 0 } : { duration: 0.7, ease: EASE }}
+                  className={shot.wide ? "md:col-span-2" : undefined}
+                >
+                  <div className="overflow-hidden rounded-[3px] border border-line bg-white">
+                    <Image
+                      src={shot.src}
+                      alt={shot.caption}
+                      width={shot.width}
+                      height={shot.height}
+                      sizes="(max-width: 768px) 92vw, 50vw"
+                      className="h-auto w-full"
+                    />
+                  </div>
+                  <figcaption className="mt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+                    {shot.caption}
+                  </figcaption>
+                </motion.figure>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         {project.sections.map((s, i) => (
           <motion.section

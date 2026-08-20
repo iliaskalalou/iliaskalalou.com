@@ -15,6 +15,33 @@ const project: Project = {
     { label: "Scope", value: "~80 pages, 8 languages" },
     { label: "Stack", value: "WordPress, Elementor, Cloudflare" },
   ],
+  shots: [
+    {
+      src: "/work/kohen/home.webp",
+      caption: "Homepage — the eight language flags sit top right, the Google rating bottom left",
+      width: 1400,
+      height: 875,
+      wide: true,
+    },
+    {
+      src: "/work/kohen/reviews.webp",
+      caption: "Practice areas, then Google and Trustpilot ratings aggregated live",
+      width: 1400,
+      height: 875,
+    },
+    {
+      src: "/work/kohen/arabic.webp",
+      caption: "The Arabic version is genuinely right-to-left — the whole layout mirrors",
+      width: 1400,
+      height: 875,
+    },
+    {
+      src: "/work/kohen/mobile.webp",
+      caption: "Mobile, where most of the traffic actually arrives",
+      width: 390,
+      height: 844,
+    },
+  ],
   sections: [
     {
       heading: "The problem",
@@ -29,6 +56,13 @@ const project: Project = {
         "Eight languages — French, English, Arabic, Turkish, Russian, Portuguese, Chinese and Luxembourgish — each properly declared so search engines serve the right one instead of guessing.",
         "Around eighty pages, organised by practice area rather than by internal structure: criminal, employment, family. Someone looking for one specific situation lands on the page about that situation, not on a general homepage.",
         "A complete structured-data layer — the firm as a legal service, its practice areas, its FAQs, its reviews, its breadcrumbs. It is the invisible half of the work, and it is what puts a firm in front of the map results rather than on page three.",
+      ],
+    },
+    {
+      heading: "Details worth noticing",
+      body: [
+        "The Arabic version is not a translation dropped into a French layout. The document direction flips, the navigation mirrors, the call button moves to the other side — everything reads right to left, the way it should.",
+        "Reviews are pulled from two sources at once, Google and Trustpilot, and shown with their real counts. For a criminal lawyer that is not decoration: it is the first thing a frightened person looks for.",
       ],
     },
     {
