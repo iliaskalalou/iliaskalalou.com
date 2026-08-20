@@ -14,7 +14,7 @@ const workItems: Work[] = [
     meta: "Web · Paris",
     description:
       "The site of a Paris criminal-law firm: eight languages, around eighty pages, expertise sections by practice area, and a full structured-data layer built for local search.",
-    href: "https://kohenavocats.com",
+    href: "/work/kohen-avocats",
   },
   {
     index: "02",
@@ -22,6 +22,7 @@ const workItems: Work[] = [
     meta: "In production · under NDA",
     description:
       "An internal AI system running day to day at the same firm. The mechanism stays confidential; what it replaced was manual, repetitive and slow.",
+    href: "/work/ai-automation",
   },
   {
     index: "03",
@@ -29,6 +30,7 @@ const workItems: Work[] = [
     meta: "Computer vision",
     description:
       "Nets are laid flat in a hangar under ceiling cameras. A vision model locates every hole to repair and shows the crew where to work.",
+    href: "/work/fishing-nets",
   },
 ];
 

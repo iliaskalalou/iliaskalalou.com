@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -43,14 +44,12 @@ function Row({ work, i, still }: { work: Work; i: number; still: boolean }) {
       transition={still ? { duration: 0 } : { duration: 0.7, delay: i * 0.06, ease: EASE }}
     >
       {work.href ? (
-        <a
+        <Link
           href={work.href}
-          target="_blank"
-          rel="noreferrer noopener"
           className="block outline-none focus-visible:bg-foreground/[0.03]"
         >
           {inner}
-        </a>
+        </Link>
       ) : (
         inner
       )}
