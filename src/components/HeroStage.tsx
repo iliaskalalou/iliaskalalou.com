@@ -19,8 +19,8 @@ const item = {
 
 export default function HeroStage() {
   return (
-    <section className="relative flex min-h-svh items-center overflow-hidden px-6 pt-28 pb-16 md:px-12 md:pt-32 md:pb-20">
-      <div className="relative z-10 mx-auto grid w-full max-w-[1400px] items-center gap-12 md:grid-cols-[1fr_0.52fr] md:gap-8">
+    <section className="relative flex min-h-svh items-center px-6 pt-28 pb-16 md:px-12 md:pt-32 md:pb-20">
+      <div className="relative z-10 mx-auto grid w-full max-w-[1400px] items-center gap-12 md:grid-cols-[1fr_0.8fr] md:gap-12">
         <motion.div variants={group} initial="hidden" animate="show">
           <motion.p
             variants={item}
@@ -71,7 +71,7 @@ export default function HeroStage() {
           initial={{ opacity: 0, scale: 1.03 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 1.1, ease: EASE, delay: 0.15 }}
-          className="relative mx-auto w-full max-w-[400px] md:-translate-x-28 lg:-translate-x-40"
+          className="relative mx-auto w-full max-w-[460px]"
         >
           <div className="relative aspect-[4/5]">
             <Image
@@ -79,28 +79,13 @@ export default function HeroStage() {
               alt="Ilias Kalalou"
               fill
               priority
-              sizes="(max-width: 768px) 90vw, 400px"
+              sizes="(max-width: 768px) 90vw, 460px"
               className="object-contain object-bottom"
             />
           </div>
         </motion.div>
       </div>
 
-      {/* The momiji, rendered in Blender from Ilias's own photograph in Japan.
-          Anchored to the right edge and allowed to bleed: its right flank is
-          cropped in the source, so that cut falls off-screen. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute right-[-3%] bottom-[4%] hidden h-[76%] w-[34%] select-none md:block lg:right-[0%] lg:w-[32%]"
-      >
-        <Image
-          src="/momiji.webp"
-          alt=""
-          fill
-          sizes="50vw"
-          className="object-contain object-bottom"
-        />
-      </div>
     </section>
   );
 }
