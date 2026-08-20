@@ -59,9 +59,10 @@ export default function Home() {
         </Reveal>
         <Reveal delay={0.08}>
           <p className="max-w-2xl text-xl leading-relaxed text-muted md:text-2xl">
-            Engineering student at EPITA, AI &amp; Big Data major, class of 2027.
-            One year of hands-on freelance experience shipping machine learning
-            systems for an AI startup. This section is a placeholder — we will
+            A year of freelance work for an AI startup: data pipelines, model
+            training, and shipping machine learning systems that hold up in
+            production. Currently completing an engineering degree at EPITA,
+            AI &amp; Big Data major. This section is a placeholder — we will
             write the real story together.
           </p>
         </Reveal>

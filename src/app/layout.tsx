@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 
 const title = "Ilias Kalalou — AI & Data Engineer";
 const description =
-  "Final-year AI & Big Data engineering student at EPITA and freelance machine learning engineer. Open to freelance work and a final-year internship.";
+  "Freelance machine learning engineer in Paris. I build and ship ML systems — data pipelines, model training, and the plumbing that keeps them running in production.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),

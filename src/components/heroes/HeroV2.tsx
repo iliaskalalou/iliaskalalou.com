@@ -202,9 +202,9 @@ export default function HeroV2() {
             className="mt-4 text-[15px] leading-[1.58] text-muted md:mt-6 md:text-[17px] md:leading-[1.62]"
             {...enter(0.06, 18)}
           >
-            Final-year AI &amp; Big Data engineering student at EPITA. For the
-            past year I have been building and shipping machine learning systems
-            for an AI startup.
+            I build and ship machine learning systems — data pipelines, model
+            training, and the plumbing that keeps them running in production.
+            For the past year, as a freelance ML engineer for an AI startup.
           </motion.p>
 
           <motion.p
@@ -212,7 +212,7 @@ export default function HeroV2() {
             {...enter(0.12, 16)}
           >
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-            Open to freelance and a 2027 internship
+            Available for freelance work
           </motion.p>
 
           <motion.div
