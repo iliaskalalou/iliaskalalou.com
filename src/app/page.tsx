@@ -20,10 +20,19 @@ const skills = [
   "Machine Learning",
   "Data Engineering",
   "Python",
+  "C",
+  "C++",
+  "Java",
+  "ASM",
   "PyTorch",
   "Spark",
-  "Next.js",
+  "SQL",
+  "Linux",
+  "Nix",
+  "Git",
   "AWS",
+  "Azure",
+  "Next.js",
 ];
 
 export default function Home() {
