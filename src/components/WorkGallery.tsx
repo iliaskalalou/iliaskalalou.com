@@ -55,7 +55,7 @@ type WorkCardProps = {
 };
 
 function WorkCard({ item, index, layout }: WorkCardProps) {
-  const cardClass = `flex flex-col justify-between gap-10 rounded-2xl border border-line bg-white/[0.03] transition-colors duration-500 hover:border-foreground ${
+  const cardClass = `flex flex-col justify-between gap-10 rounded-2xl border border-line bg-[color:var(--foreground)]/[0.025] transition-colors duration-500 hover:border-foreground ${
     layout === "row"
       ? "h-[68svh] w-[75vw] max-w-[900px] shrink-0 p-8 lg:p-12"
       : "min-h-[380px] w-full p-6 md:p-10"
