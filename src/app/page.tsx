@@ -1,4 +1,4 @@
-import HeroStage from "@/components/HeroStage";
+import HeroV2 from "@/components/heroes/HeroV2";
 import Magnetic from "@/components/Magnetic";
 import Marquee from "@/components/Marquee";
 import Reveal, { RevealText } from "@/components/Reveal";
@@ -29,24 +29,7 @@ const skills = [
 export default function Home() {
   return (
     <main className="relative">
-      <header className="fixed top-0 z-10 flex w-full items-center justify-between bg-background/70 px-6 py-5 backdrop-blur-md md:px-12">
-        <a href="#" className="text-sm font-medium">
-          © Ilias Kalalou
-        </a>
-        <nav className="flex gap-6 text-sm text-muted">
-          <a href="#work" className="transition-colors hover:text-foreground">
-            Work
-          </a>
-          <a href="#about" className="transition-colors hover:text-foreground">
-            About
-          </a>
-          <a href="#contact" className="transition-colors hover:text-foreground">
-            Contact
-          </a>
-        </nav>
-      </header>
-
-      <HeroStage />
+      <HeroV2 />
 
       <Marquee items={skills} />
 
