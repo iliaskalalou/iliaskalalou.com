@@ -70,8 +70,8 @@ const PORTRAIT_SHADOW: CSSProperties = {
 };
 
 const NAV = [
-  { label: "Work", href: "#work" },
-  { label: "About", href: "#about" },
+  { label: "Projets", href: "#work" },
+  { label: "À propos", href: "#about" },
   { label: "Contact", href: "#contact" },
 ];
 
@@ -193,7 +193,7 @@ export default function HeroV2() {
             className="font-mono text-[10px] uppercase tracking-[0.24em] text-muted md:text-[11px] md:tracking-[0.26em]"
             {...enter(0, 14)}
           >
-            AI &amp; Data Engineer
+            Ingénieur IA &amp; Data
             <span className="mx-2.5 text-foreground/25 md:mx-3">/</span>
             Paris
           </motion.p>
@@ -202,9 +202,10 @@ export default function HeroV2() {
             className="mt-4 text-[15px] leading-[1.58] text-muted md:mt-6 md:text-[17px] md:leading-[1.62]"
             {...enter(0.06, 18)}
           >
-            I build and ship machine learning systems — data pipelines, model
-            training, and the plumbing that keeps them running in production.
-            For the past year, as a freelance ML engineer for an AI startup.
+            Je conçois et je mets en production des systèmes de machine
+            learning — pipelines de données, entraînement de modèles, et toute
+            la tuyauterie qui les fait tourner dans la durée. Depuis un an, en
+            freelance pour une startup d’IA.
           </motion.p>
 
           <motion.p
@@ -212,7 +213,7 @@ export default function HeroV2() {
             {...enter(0.12, 16)}
           >
             <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-            Available for freelance work
+            Disponible en freelance
           </motion.p>
 
           <motion.div
@@ -224,7 +225,7 @@ export default function HeroV2() {
                 href="mailto:ilias.kalalou@gmail.com"
                 className="group inline-flex items-center gap-2 rounded-full bg-foreground px-6 py-3 text-[13px] font-medium text-background transition-colors hover:bg-accent md:text-sm"
               >
-                Get in touch
+                Me contacter
                 <span
                   aria-hidden
                   className="transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-1"
@@ -238,7 +239,7 @@ export default function HeroV2() {
                 href="#work"
                 className="inline-flex items-center rounded-full border border-foreground/20 px-6 py-3 text-[13px] transition-colors hover:border-foreground/60 md:text-sm"
               >
-                See my work
+                Voir mes projets
               </a>
             </Magnetic>
           </motion.div>
@@ -269,7 +270,7 @@ export default function HeroV2() {
             <div className="absolute inset-0" style={PORTRAIT_SHADOW}>
               <Image
                 src="/ilias.webp"
-                alt="Portrait of Ilias Kalalou"
+                alt="Portrait d’Ilias Kalalou"
                 fill
                 sizes="(min-width: 768px) 48vw, 106vw"
                 loading="eager"

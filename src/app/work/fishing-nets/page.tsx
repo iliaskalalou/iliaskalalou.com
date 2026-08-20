@@ -1,31 +1,31 @@
 import ProjectPage, { type Project } from "@/components/ProjectPage";
 
-// The client is deliberately not named. Technical figures — model, stack,
-// throughput, accuracy — are still to be supplied by Ilias.
+// Le client n'est volontairement pas nommé. Les chiffres techniques — modèle,
+// stack, cadence, précision — restent à fournir par Ilias.
 const project: Project = {
   index: "03 / 03",
-  title: "Finding the holes in a fishing net from the ceiling",
+  title: "Repérer les trous d’un filet de pêche depuis le plafond",
   lead:
-    "A fishing company needed to know where its nets were torn. The nets are enormous, the holes are small, and until then someone had to walk the whole surface looking for them.",
+    "Une entreprise de pêche avait besoin de savoir où ses filets étaient déchirés. Les filets sont immenses, les trous sont petits, et jusque-là il fallait parcourir toute la surface à la main pour les trouver.",
   facts: [
-    { label: "Client", value: "Fishing industry" },
-    { label: "Field", value: "Computer vision" },
-    { label: "Setting", value: "Hangar, ceiling cameras" },
-    { label: "Company", value: "SCIEN" },
+    { label: "Client", value: "Secteur de la pêche" },
+    { label: "Domaine", value: "Vision par ordinateur" },
+    { label: "Terrain", value: "Hangar, caméras de plafond" },
+    { label: "Entreprise", value: "SCIEN" },
   ],
   sections: [
     {
-      heading: "The setting",
+      heading: "Le dispositif",
       body: [
-        "Nets are spread flat across the floor of a hangar. Cameras mounted on the ceiling look straight down at them. From that view, a model locates every hole that needs repairing and shows the crew where to work.",
-        "It is a good problem because it is honest: the value is obvious to anyone, technical or not. Someone was walking a net looking for damage; now they are told where to go.",
+        "Les filets sont étalés à plat sur le sol d’un hangar. Des caméras fixées au plafond les regardent à la verticale. Depuis ce point de vue, un modèle localise chaque trou à réparer et indique aux équipes où intervenir.",
+        "C’est un bon problème parce qu’il est honnête : la valeur est évidente pour n’importe qui, technique ou non. Quelqu’un parcourait un filet à la recherche de dégâts ; maintenant on lui dit où aller.",
       ],
     },
     {
-      heading: "Why it is harder than it sounds",
+      heading: "Pourquoi c’est plus difficile qu’il n’y paraît",
       body: [
-        "A net is mostly holes. The whole object is a grid of gaps, and the defect is a gap of the wrong shape in the wrong place — so the model has to learn the difference between the mesh and a tear, at a scale where both are a few pixels.",
-        "Add a floor that is never evenly lit, nets that are never laid perfectly flat, and cameras that see the same net at different angles depending on where it falls.",
+        "Un filet n’est qu’une succession de trous. L’objet entier est une grille de vides, et le défaut est un vide de la mauvaise forme au mauvais endroit — le modèle doit donc apprendre la différence entre la maille et la déchirure, à une échelle où les deux font quelques pixels.",
+        "Ajoutez un sol jamais éclairé uniformément, des filets jamais parfaitement à plat, et des caméras qui voient le même filet sous des angles différents selon l’endroit où il tombe.",
       ],
     },
   ],

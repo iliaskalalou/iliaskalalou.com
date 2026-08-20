@@ -146,7 +146,7 @@ export default function ProjectPage({ project }: { project: Project }) {
 
         <div className="mt-24 border-t border-line pt-10 md:mt-28">
           <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
-            Next
+            Suivant
           </span>
           <Link
             href={project.next.href}

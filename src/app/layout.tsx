@@ -15,9 +15,9 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const title = "Ilias Kalalou — AI & Data Engineer";
+const title = "Ilias Kalalou — Ingénieur IA & Data, freelance à Paris";
 const description =
-  "Freelance machine learning engineer in Paris. I build and ship ML systems — data pipelines, model training, and the plumbing that keeps them running in production.";
+  "Ingénieur machine learning freelance à Paris. Je conçois et mets en production des systèmes d’IA : pipelines de données, entraînement de modèles, et la tuyauterie qui les fait tourner dans la durée.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     url: "/",
     siteName: "Ilias Kalalou",
     type: "website",
-    locale: "en_US",
+    locale: "fr_FR",
   },
   twitter: { card: "summary_large_image", title, description },
 };
@@ -45,7 +45,7 @@ const preloaderGate = `try{if(!sessionStorage.getItem('ik-preloader-seen')&&!mat
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
-      lang="en"
+      lang="fr"
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} min-h-full antialiased`}
     >

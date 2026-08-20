@@ -1,79 +1,78 @@
 import ProjectPage, { type Project } from "@/components/ProjectPage";
 
-// Everything stated here was verified against the live site rather than
-// assumed. Ilias's precise contribution is still to be added — he did not
-// build it alone and that should be said plainly once he confirms what
-// was his.
+// Tout ce qui est affirmé ici a été vérifié sur le site en ligne, pas supposé.
+// La contribution exacte d'Ilias reste à préciser : il ne l'a pas fait seul et
+// il vaut mieux le dire clairement une fois qu'il aura confirmé ce qui est de lui.
 const project: Project = {
   index: "01 / 03",
-  title: "A law firm that had to be found in eight languages",
+  title: "Un cabinet qui devait être trouvé en huit langues",
   lead:
-    "Kohen Avocats is a criminal-law practice in Paris. People reach a criminal lawyer in a hurry, often at the worst moment of their life, and frequently not in French. The site had to answer that.",
+    "Kohen Avocats est un cabinet pénaliste parisien. On ne cherche pas un avocat pénaliste comme on cherche un prestataire : on le cherche dans l’urgence, souvent au pire moment, et fréquemment pas en français. Le site devait répondre à ça.",
   facts: [
     { label: "Client", value: "Kohen Avocats, Paris" },
-    { label: "Field", value: "Criminal, family and employment law" },
-    { label: "Scope", value: "~80 pages, 8 languages" },
+    { label: "Domaines", value: "Pénal, famille, social" },
+    { label: "Périmètre", value: "~80 pages, 8 langues" },
     { label: "Stack", value: "WordPress, Elementor, Cloudflare" },
   ],
   shots: [
     {
       src: "/work/kohen/home.webp",
-      caption: "Homepage — the eight language flags sit top right, the Google rating bottom left",
+      caption: "L’accueil — les huit drapeaux en haut à droite, la note Google en bas à gauche",
       width: 1400,
       height: 875,
       wide: true,
     },
     {
       src: "/work/kohen/reviews.webp",
-      caption: "Practice areas, then Google and Trustpilot ratings aggregated live",
+      caption: "Les domaines d’intervention, puis les avis Google et Trustpilot agrégés en direct",
       width: 1400,
       height: 875,
     },
     {
       src: "/work/kohen/arabic.webp",
-      caption: "The Arabic version is genuinely right-to-left — the whole layout mirrors",
+      caption: "La version arabe est en vraie droite-à-gauche : toute la mise en page bascule",
       width: 1400,
       height: 875,
     },
     {
       src: "/work/kohen/mobile.webp",
-      caption: "Mobile, where most of the traffic actually arrives",
+      caption: "Le mobile, d’où vient l’essentiel du trafic",
       width: 390,
       height: 844,
     },
   ],
   sections: [
     {
-      heading: "The problem",
+      heading: "Le problème",
       body: [
-        "A criminal lawyer is not chosen the way a supplier is. Someone searches at two in the morning, from a police station or a family member's phone, using the words of their own language and their own panic — police custody, immediate appearance, indictment.",
-        "So the site had to do two things at once: be found on those exact searches, and be readable by people who do not speak French.",
+        "Quelqu’un cherche à deux heures du matin, depuis un commissariat ou le téléphone d’un proche, avec les mots de sa propre langue et de sa propre panique : garde à vue, comparution immédiate, mise en examen.",
+        "Le site devait donc faire deux choses à la fois : ressortir sur ces recherches précises, et rester lisible par des gens qui ne parlent pas français.",
       ],
     },
     {
-      heading: "What the site does",
+      heading: "Ce que fait le site",
       body: [
-        "Eight languages — French, English, Arabic, Turkish, Russian, Portuguese, Chinese and Luxembourgish — each properly declared so search engines serve the right one instead of guessing.",
-        "Around eighty pages, organised by practice area rather than by internal structure: criminal, employment, family. Someone looking for one specific situation lands on the page about that situation, not on a general homepage.",
-        "A complete structured-data layer — the firm as a legal service, its practice areas, its FAQs, its reviews, its breadcrumbs. It is the invisible half of the work, and it is what puts a firm in front of the map results rather than on page three.",
+        "Huit langues — français, anglais, arabe, turc, russe, portugais, chinois et luxembourgeois — chacune déclarée correctement, pour que les moteurs servent la bonne version au lieu de deviner.",
+        "Environ quatre-vingts pages, organisées par domaine d’intervention plutôt que par logique interne. Quelqu’un qui cherche une situation précise arrive sur la page de cette situation, pas sur un accueil généraliste.",
+        "Une couche complète de données structurées : le cabinet comme service juridique, ses domaines, ses questions fréquentes, ses avis, son fil d’ariane. C’est la moitié invisible du travail, et c’est elle qui place un cabinet devant les résultats cartographiques plutôt qu’en troisième page.",
       ],
     },
     {
-      heading: "Details worth noticing",
+      heading: "Deux détails qui comptent",
       body: [
-        "The Arabic version is not a translation dropped into a French layout. The document direction flips, the navigation mirrors, the call button moves to the other side — everything reads right to left, the way it should.",
-        "Reviews are pulled from two sources at once, Google and Trustpilot, and shown with their real counts. For a criminal lawyer that is not decoration: it is the first thing a frightened person looks for.",
+        "La version arabe n’est pas une traduction posée dans une maquette française. Le sens de lecture s’inverse, la navigation passe en miroir, le bouton d’appel change de côté — tout se lit de droite à gauche, comme il se doit.",
+        "Les avis sont tirés de deux sources en même temps, Google et Trustpilot, avec leurs compteurs réels. Pour un pénaliste ce n’est pas décoratif : c’est la première chose que cherche quelqu’un d’inquiet.",
       ],
     },
     {
-      heading: "My part",
+      heading: "Ma part",
       body: [
-        "I did not build this alone, and the detail of what is mine is being written up properly rather than blurred.",
+        "Je n’ai pas fait ce site seul, et le détail de ce qui est de moi est en cours de rédaction plutôt que noyé dans le flou.",
       ],
     },
   ],
-  external: { label: "Visit kohenavocats.com", href: "https://kohenavocats.com" },
-  next: { title: "AI process automation", href: "/work/ai-automation" },
+  external: { label: "Voir kohenavocats.com", href: "https://kohenavocats.com" },
+  next: { title: "Automatisation IA", href: "/work/ai-automation" },
 };
 
 export default function Page() {

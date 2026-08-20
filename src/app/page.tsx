@@ -13,23 +13,23 @@ const workItems: Work[] = [
     title: "Kohen Avocats",
     meta: "Web · Paris",
     description:
-      "The site of a Paris criminal-law firm: eight languages, around eighty pages, expertise sections by practice area, and a full structured-data layer built for local search.",
+      "Le site d’un cabinet pénaliste parisien : huit langues, environ quatre-vingts pages, des sections par domaine d’expertise, et une couche complète de données structurées pensée pour la recherche locale.",
     href: "/work/kohen-avocats",
   },
   {
     index: "02",
-    title: "AI process automation",
-    meta: "In production · under NDA",
+    title: "Automatisation IA",
+    meta: "En production · sous NDA",
     description:
-      "An internal AI system running day to day at the same firm. The mechanism stays confidential; what it replaced was manual, repetitive and slow.",
+      "Un système d’IA interne qui tourne au quotidien dans le même cabinet. Le mécanisme reste confidentiel ; ce qu’il remplaçait était manuel, répétitif et lent.",
     href: "/work/ai-automation",
   },
   {
     index: "03",
-    title: "Fishing net inspection",
-    meta: "Computer vision",
+    title: "Inspection de filets de pêche",
+    meta: "Vision par ordinateur",
     description:
-      "Nets are laid flat in a hangar under ceiling cameras. A vision model locates every hole to repair and shows the crew where to work.",
+      "Les filets sont étalés au sol d’un hangar, sous des caméras de plafond. Un modèle de vision localise chaque trou à réparer et indique aux équipes où intervenir.",
     href: "/work/fishing-nets",
   },
 ];
@@ -63,7 +63,7 @@ export default function Home() {
       <section id="work" className="scroll-mt-24 py-24">
         <Reveal className="px-6 md:px-12">
           <p className="mb-10 text-sm uppercase tracking-[0.25em] text-muted">
-            Selected work
+            Projets
           </p>
         </Reveal>
         <WorkList items={workItems} />
@@ -72,16 +72,16 @@ export default function Home() {
       <section id="about" className="scroll-mt-24 px-6 py-24 md:px-12">
         <Reveal>
           <p className="mb-10 text-sm uppercase tracking-[0.25em] text-muted">
-            About
+            À propos
           </p>
         </Reveal>
         <Reveal delay={0.08}>
           <p className="max-w-2xl text-xl leading-relaxed text-muted md:text-2xl">
-            A year of freelance work for an AI startup: data pipelines, model
-            training, and shipping machine learning systems that hold up in
-            production. Currently completing an engineering degree at EPITA,
-            AI &amp; Big Data major. This section is a placeholder — we will
-            write the real story together.
+            Un an de freelance pour une startup d’IA : pipelines de données,
+            entraînement de modèles, et mise en production de systèmes de
+            machine learning qui tiennent dans la durée. Actuellement en fin de
+            cycle ingénieur à l’EPITA, majeure IA &amp; Big Data. Cette section
+            est provisoire — le vrai texte reste à écrire.
           </p>
         </Reveal>
       </section>
@@ -96,7 +96,7 @@ export default function Home() {
           </p>
         </Reveal>
         <h2 className="text-[10vw] leading-[0.95] font-semibold tracking-tight md:text-[6vw]">
-          <RevealText text="Let's work together" />
+          <RevealText text="Travaillons ensemble" />
         </h2>
         <Reveal delay={0.2}>
           <div className="mt-10 flex flex-wrap gap-4">
@@ -127,7 +127,7 @@ export default function Home() {
           </div>
         </Reveal>
         <p className="mt-20 text-xs text-muted">
-          © 2026 Ilias Kalalou · Built from scratch with Next.js
+          © 2026 Ilias Kalalou · Conçu et développé avec Next.js
         </p>
       </section>
     </main>
