@@ -2,18 +2,34 @@ import HeroV2 from "@/components/heroes/HeroV2";
 import Magnetic from "@/components/Magnetic";
 import Marquee from "@/components/Marquee";
 import Reveal, { RevealText } from "@/components/Reveal";
-import WorkGallery, { type WorkItem } from "@/components/WorkGallery";
+import WorkList, { type Work } from "@/components/WorkList";
 
-const workItems: WorkItem[] = [
+// Descriptions are written from what is publicly verifiable. Ilias's exact
+// contribution on the site, and the specifics of the AI process, are still
+// to be filled in — deliberately not invented here.
+const workItems: Work[] = [
   {
-    title: "Freelance — AI Startup",
-    tag: "ML Engineering",
-    year: "2025 — now",
+    index: "01",
+    title: "Kohen Avocats",
+    meta: "Web · Paris",
     description:
-      "A year of production work: data pipelines, model training and shipping ML systems.",
+      "The site of a Paris criminal-law firm: eight languages, around eighty pages, expertise sections by practice area, and a full structured-data layer built for local search.",
+    href: "https://kohenavocats.com",
   },
-  { title: "Project Two", tag: "To be added" },
-  { title: "Project Three", tag: "To be added" },
+  {
+    index: "02",
+    title: "AI process automation",
+    meta: "In production · under NDA",
+    description:
+      "An internal AI system running day to day at the same firm. The mechanism stays confidential; what it replaced was manual, repetitive and slow.",
+  },
+  {
+    index: "03",
+    title: "Fishing net inspection",
+    meta: "Computer vision",
+    description:
+      "Nets are laid flat in a hangar under ceiling cameras. A vision model locates every hole to repair and shows the crew where to work.",
+  },
 ];
 
 const skills = [
@@ -48,7 +64,7 @@ export default function Home() {
             Selected work
           </p>
         </Reveal>
-        <WorkGallery items={workItems} />
+        <WorkList items={workItems} />
       </section>
 
       <section id="about" className="scroll-mt-24 px-6 py-24 md:px-12">
