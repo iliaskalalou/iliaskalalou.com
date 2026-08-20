@@ -88,13 +88,19 @@ export default function ProjectPage({ project }: { project: Project }) {
                   transition={still ? { duration: 0 } : { duration: 0.7, ease: EASE }}
                   className={shot.wide ? "md:col-span-2" : undefined}
                 >
-                  <div className="overflow-hidden rounded-[3px] border border-line bg-white">
+                  <div
+                    className={
+                      shot.height > shot.width
+                        ? "mx-auto w-full max-w-[300px] overflow-hidden rounded-[3px] border border-line bg-background"
+                        : "overflow-hidden rounded-[3px] border border-line bg-background"
+                    }
+                  >
                     <Image
                       src={shot.src}
                       alt={shot.caption}
                       width={shot.width}
                       height={shot.height}
-                      sizes="(max-width: 768px) 92vw, 50vw"
+                      sizes={shot.height > shot.width ? "300px" : "(max-width: 768px) 92vw, 50vw"}
                       className="h-auto w-full"
                     />
                   </div>
