@@ -51,3 +51,7 @@ assets-3d/**/fuji.blend
 
 # compiled swift binary
 /tools/cutout
+
+# rebuilt bundles
+assets-3d/**/hero.js
+assets-3d/**/node_modules/

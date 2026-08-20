@@ -9,7 +9,7 @@
    where they actually are.
    ============================================================================ */
 import {
-  Scene, PerspectiveCamera, WebGLRenderer, Group, Mesh, MeshStandardMaterial,
+  Scene, PerspectiveCamera, WebGLRenderer, Group, Mesh, MeshStandardMaterial, MeshBasicMaterial,
   ShaderMaterial, PlaneGeometry, InstancedBufferGeometry, InstancedBufferAttribute,
   BufferAttribute, DirectionalLight, HemisphereLight, AmbientLight, Color, Vector3,
   Vector2, Box3, TextureLoader, CanvasTexture, SRGBColorSpace, NoToneMapping, DoubleSide,
@@ -39,10 +39,11 @@ const BODY_SCALE = 0.019155;
    stylised flat cone shot on a 220 mm lens; at a hero lens its peak would sit
    barely above the horizon. Art direction, stated plainly rather than hidden. */
 const FUJI_STRETCH = 2.6;
+const PORTRAIT_AR = 1050 / 1498;   // real aspect of the cut-out photograph
 
 const LANDSCAPE = {
   fov: 33,
-  fuji:     { z: -380, x: -34.0, y: -95.0, s: 19.0, ry: 0.10 },
+  fuji:     { z: -380, x:   0.0, y:  14.0, s: 215.0, ry: 0.0 },  // flat plate, not geometry
   pagoda:   { z:  -60, x: -18.8, y: -13.9, s: 3.42, ry: 0.34 },
   portrait: { z:  -22, x:  -0.6, y:   0.3, h: 6.25 },
   tree:     { z:  -20, x:   8.6, y:  -7.1, s: 1.38, ry: 0.03 },
@@ -57,7 +58,7 @@ const LANDSCAPE = {
    so its flanks still resolve. Same geometry, same camera, restaged. */
 const PORTRAIT = {
   fov: 42,
-  fuji:     { z: -260, x: -12.0, y:  -9.3, s: 8.5, ry: 0.10 },
+  fuji:     { z: -260, x:   0.0, y:  10.0, s: 170.0, ry: 0.0 },  // flat plate, not geometry
   pagoda:   { z:  -60, x:  -6.6, y: -16.0, s: 2.60, ry: 0.34 },
   portrait: { z:  -22, x:  -0.5, y:   1.4, h: 5.50 },
   tree:     { z:  -20, x:   7.6, y:  -9.2, s: 1.66, ry: 0.03 },
@@ -181,13 +182,13 @@ let treeGroup = null, leafMesh = null;
 const parts = {};
 
 const READY = Promise.all([
-  loadGLB('assets/fuji.glb'),
-  loadGLB('assets/pagoda.glb'),
+  loadTex('assets/fuji_plate.webp', true),
+  loadTex('assets/portrait.webp', true),
   loadGLB('assets/branches.glb'),
   loadGLB('assets/foliage.glb'),
   loadTex('assets/leaf_atlas.webp', true),
   loadTex('assets/sprite_atlas.webp', true)
-]).then(([gFuji, gPag, gBark, gFol, texLeaf, texSprite]) => {
+]).then(([texFuji, texPortrait, gBark, gFol, texLeaf, texSprite]) => {
 
   /* ---------------------------------------------------------------- FUJI
      Two vertex-colour sets came out of the original build script:
@@ -195,42 +196,15 @@ const READY = Promise.all([
        COLOR_2  r = warm rim mask, g = snow, b = cool counter-rim
      The rim terms are Fresnel and therefore VIEW DEPENDENT. Baked into a PNG
      they would be frozen; here they move as the camera moves.               */
-  gFuji.scale(1, FUJI_STRETCH, 1);                      // vertical stretch, then
-  gFuji.computeVertexNormals();  // normals recomputed here (not shipped: -12 B/vtx)
-  const fuji = new Mesh(gFuji, new ShaderMaterial({
-    transparent: true, depthWrite: false, fog: false,
-    uniforms: {
-      uBodyScale: { value: BODY_SCALE },
-      uRim:       { value: new Color(0xd68544).convertSRGBToLinear() },
-      uRimCool:   { value: new Color(0x4a5c7c).convertSRGBToLinear() },
-      uRimGain:   { value: 2.6 },
-      uCoolGain:  { value: 0.85 },
-      uLift:      { value: 1.45 }
-    },
-    vertexShader: `
-      attribute vec4 color_1;
-      attribute vec4 color_2;
-      varying vec4 vBody; varying vec4 vMask; varying vec3 vN; varying vec3 vI;
-      void main(){
-        vBody = color_1; vMask = color_2;
-        vec4 wp = modelMatrix * vec4(position,1.0);
-        vN = normalize(mat3(modelMatrix) * normal);
-        vI = normalize(cameraPosition - wp.xyz);
-        gl_Position = projectionMatrix * viewMatrix * wp;
-      }`,
-    fragmentShader: `
-      uniform float uBodyScale, uRimGain, uCoolGain, uLift;
-      uniform vec3 uRim, uRimCool;
-      varying vec4 vBody; varying vec4 vMask; varying vec3 vN; varying vec3 vI;
-      void main(){
-        float f = clamp(1.0 - dot(normalize(vN), normalize(vI)), 0.0, 1.0);
-        vec3 body = vBody.rgb * uBodyScale * uLift;
-        vec3 warm = uRim     * pow(f, 9.0) * vMask.r * uRimGain;
-        vec3 cool = uRimCool * pow(f, 5.0) * vMask.b * uCoolGain;
-        gl_FragColor = vec4(body + warm + cool, vBody.a);
-        #include <colorspace_fragment>
-      }`
-  }));
+  /* The Fuji is the baked Blender render on an unlit plane. Its glare and
+     grading are cooked into the pixels; relighting it would destroy exactly
+     what makes it beautiful. MeshBasicMaterial, never touched by the lights. */
+  const fAsp = (texFuji.image && texFuji.image.width) ? texFuji.image.width / texFuji.image.height : 2;
+  const fuji = new Mesh(
+    new PlaneGeometry(fAsp, 1),
+    new MeshBasicMaterial({ map: texFuji, transparent: true, depthWrite: false,
+                            fog: false, toneMapped: false })
+  );
   fuji.renderOrder = -20;
   place(fuji, LAYOUT.fuji);
   world.add(fuji);
@@ -239,14 +213,7 @@ const READY = Promise.all([
   /* -------------------------------------------------------------- PAGODA
      Nine flat Blender materials baked to one vertex-colour set, one draw
      call, flat-shaded from screen-space derivatives (no normals shipped). */
-  fixColors(gPag);
-  const pagoda = new Mesh(gPag, new MeshStandardMaterial({
-    vertexColors: true, flatShading: true, roughness: 0.72, metalness: 0.0,
-    side: DoubleSide
-  }));
-  place(pagoda, LAYOUT.pagoda);
-  world.add(pagoda);
-  parts.pagoda = pagoda;
+
 
   /* ----------------------------------------------------------- THE MOMIJI */
   treeGroup = new Group();
@@ -300,15 +267,15 @@ const READY = Promise.all([
   treeGroup.add(foliage);
 
   /* ------------------------------------------------------------- PORTRAIT
-     PLACEHOLDER. The owner has not sent his photograph. This is a canvas
-     texture generated at runtime — it costs zero bytes over the wire and it
-     is meant to look like the stand-in that it is. */
+     Ilias's photograph, cut out with macOS Vision and graded for dusk.
+     It lives in the 3D scene rather than on top of it, so falling leaves
+     sort correctly in front of and behind him. */
   const portrait = new Mesh(
-    new PlaneGeometry(LAYOUT.portrait.h * 0.8, LAYOUT.portrait.h),
+    new PlaneGeometry(LAYOUT.portrait.h * PORTRAIT_AR, LAYOUT.portrait.h),
     new ShaderMaterial({
       transparent: true, depthWrite: true, alphaTest: 0.02, fog: false,
       toneMapped: false,
-      uniforms: { map: { value: makePortrait() } },
+      uniforms: { map: { value: texPortrait } },
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
       fragmentShader: `uniform sampler2D map; varying vec2 vUv;
@@ -334,7 +301,6 @@ const READY = Promise.all([
 function restage() {
   if (!parts.fuji) return;
   place(parts.fuji, LAYOUT.fuji);
-  place(parts.pagoda, LAYOUT.pagoda);
   place(parts.tree, LAYOUT.tree);
   parts.portrait.position.set(LAYOUT.portrait.x, LAYOUT.portrait.y, LAYOUT.portrait.z);
   parts.portrait.geometry.dispose();
@@ -718,7 +684,6 @@ window.heroDemo = {
     applyLayout(patch) {
       if (patch) for (const k in patch) Object.assign(LAYOUT[k] ?? (LAYOUT[k] = {}), patch[k]);
       if (parts.fuji) place(parts.fuji, LAYOUT.fuji);
-      if (parts.pagoda) place(parts.pagoda, LAYOUT.pagoda);
       if (parts.tree) place(parts.tree, LAYOUT.tree);
       if (parts.portrait) {
         parts.portrait.position.set(LAYOUT.portrait.x, LAYOUT.portrait.y, LAYOUT.portrait.z);
