@@ -17,14 +17,14 @@ const project: Project = {
     {
       heading: "Pourquoi c’est court",
       body: [
-        "Les processus internes d’un cabinet lui appartiennent. Je ne vais pas les décrire pour gagner une page de portfolio, et un client qui m’évalue devrait plutôt y voir une garantie qu’une frustration.",
-        "Ce qui peut être dit : il s’agit de systèmes qui ont pris une tâche professionnelle répétitive, faite à la main chaque jour, et l’ont rendue autonome — avec les vérifications qu’un cabinet exige avant de confier quoi que ce soit à ses dossiers.",
+        "Les processus internes d’un cabinet lui appartiennent. Je ne vais pas les décrire pour gagner une page de portfolio, et un client qui m’évalue devrait y voir une garantie plutôt qu’une frustration.",
+        "Ce que je peux dire : il s’agit de systèmes qui ont pris une tâche professionnelle répétitive, faite à la main chaque jour, et l’ont rendue autonome — avec les vérifications qu’un cabinet exige avant de confier quoi que ce soit à ses dossiers.",
       ],
     },
     {
       heading: "Ce que ça dit du travail",
       body: [
-        "L’essentiel du travail d’IA dans une structure comme celle-là ne porte pas sur le modèle. Il porte sur la tuyauterie autour : aller chercher la donnée là où elle vit réellement, encaisser des documents qui ne sont jamais tout à fait normalisés, et échouer proprement quand quelque chose cloche.",
+        "L’essentiel du travail d’IA dans une structure comme celle-là ne porte pas sur le modèle. Il porte sur tout ce qu’il y a autour : aller chercher la donnée là où elle se trouve vraiment, composer avec des documents qui ne sont jamais tout à fait normalisés, et s’arrêter proprement quand quelque chose cloche.",
         "C’est cette partie-là que je fais, et c’est elle qui détermine si un système tourne encore six mois plus tard.",
       ],
     },

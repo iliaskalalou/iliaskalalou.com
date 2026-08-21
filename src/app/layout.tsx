@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 
 const title = "Ilias Kalalou — Ingénieur IA & Data, freelance à Paris";
 const description =
-  "Ingénieur machine learning freelance à Paris. Je conçois et mets en production des systèmes d’IA : pipelines de données, entraînement de modèles, et la tuyauterie qui les fait tourner dans la durée.";
+  "Ingénieur machine learning freelance à Paris. Je conçois et mets en production des systèmes d’IA : pipelines de données, entraînement de modèles, et tout ce qui les fait tenir une fois en service.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),

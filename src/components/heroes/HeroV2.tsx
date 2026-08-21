@@ -203,8 +203,8 @@ export default function HeroV2() {
             {...enter(0.06, 18)}
           >
             Je conçois et je mets en production des systèmes de machine
-            learning — pipelines de données, entraînement de modèles, et toute
-            la tuyauterie qui les fait tourner dans la durée. Depuis un an, en
+            learning : pipelines de données, entraînement de modèles, et tout
+            ce qui les fait tenir une fois en service. Depuis un an, en
             freelance pour une startup d’IA.
           </motion.p>
 

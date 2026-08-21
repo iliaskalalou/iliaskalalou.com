@@ -30,7 +30,7 @@ const project: Project = {
     },
     {
       src: "/work/kohen/arabic.webp",
-      caption: "La version arabe est en vraie droite-à-gauche : toute la mise en page bascule",
+      caption: "La version arabe se lit vraiment de droite à gauche : toute la mise en page bascule",
       width: 1400,
       height: 875,
     },
@@ -53,7 +53,7 @@ const project: Project = {
       heading: "Ce qui a été construit pour ça",
       body: [
         "Environ quatre-vingts pages, organisées par situation plutôt que par logique interne au cabinet. Quelqu’un qui cherche un cas précis arrive sur la page de ce cas, pas sur un accueil généraliste — c’est ce qui fait la différence entre une visite et un appel.",
-        "Une couche complète de données structurées : le cabinet comme service juridique, ses domaines, ses questions fréquentes, ses avis, son fil d’ariane. C’est la moitié invisible du travail, celle qui décide si un cabinet apparaît dans les résultats cartographiques ou en troisième page.",
+        "Une couche complète de données structurées : le cabinet comme service juridique, ses domaines, ses questions fréquentes, ses avis, son fil d’Ariane. C’est la moitié invisible du travail, celle qui décide si un cabinet apparaît dans les résultats cartographiques ou à la troisième page.",
         "Et huit langues, correctement déclarées, pour élargir l’audience au-delà des francophones. Ce n’est pas le cœur du sujet, mais dans une ville comme Paris ça ouvre une part de marché que la plupart des cabinets laissent de côté.",
       ],
     },
@@ -67,7 +67,7 @@ const project: Project = {
     {
       heading: "Ma part",
       body: [
-        "Je n’ai pas fait ce site seul, et le détail de ce qui est de moi est en cours de rédaction plutôt que noyé dans le flou.",
+        "Je n’ai pas fait ce site seul, et le détail de ce qui est de moi est en cours de rédaction plutôt que laissé dans le flou.",
       ],
     },
   ],

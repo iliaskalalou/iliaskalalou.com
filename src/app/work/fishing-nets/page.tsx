@@ -17,15 +17,15 @@ const project: Project = {
     {
       heading: "Le dispositif",
       body: [
-        "Les filets sont étalés à plat sur le sol d’un hangar. Des caméras fixées au plafond les regardent à la verticale. Depuis ce point de vue, un modèle localise chaque trou à réparer et indique aux équipes où intervenir.",
-        "C’est un bon problème parce qu’il est honnête : la valeur est évidente pour n’importe qui, technique ou non. Quelqu’un parcourait un filet à la recherche de dégâts ; maintenant on lui dit où aller.",
+        "Les filets sont étalés à plat sur le sol d’un hangar, sous des caméras fixées au plafond qui les regardent à la verticale. Un modèle localise chaque trou à réparer et indique aux équipes où intervenir.",
+        "L’intérêt du projet tient à sa simplicité : la valeur se comprend sans explication, technique ou pas. Quelqu’un parcourait un filet entier à la recherche de dégâts ; désormais on lui indique où aller.",
       ],
     },
     {
       heading: "Pourquoi c’est plus difficile qu’il n’y paraît",
       body: [
-        "Un filet n’est qu’une succession de trous. L’objet entier est une grille de vides, et le défaut est un vide de la mauvaise forme au mauvais endroit — le modèle doit donc apprendre la différence entre la maille et la déchirure, à une échelle où les deux font quelques pixels.",
-        "Ajoutez un sol jamais éclairé uniformément, des filets jamais parfaitement à plat, et des caméras qui voient le même filet sous des angles différents selon l’endroit où il tombe.",
+        "Un filet n’est qu’une grille de vides : le défaut, c’est un vide de la mauvaise forme au mauvais endroit. Le modèle doit donc distinguer la maille de la déchirure, à une échelle où les deux ne font que quelques pixels.",
+        "S’y ajoutent un sol jamais éclairé uniformément, des filets jamais parfaitement à plat, et des caméras qui voient le même filet sous des angles différents selon la façon dont il retombe.",
       ],
     },
   ],

@@ -13,7 +13,7 @@ const workItems: Work[] = [
     title: "Kohen Avocats",
     meta: "Site vitrine · SEO",
     description:
-      "Un site vitrine construit pour être trouvé : environ quatre-vingts pages organisées par situation, données structurées complètes, référencement local. L’objectif était d’amener des dossiers, pas de faire joli.",
+      "Un site vitrine construit pour être trouvé : environ quatre-vingts pages organisées par situation, données structurées complètes, référencement local. L’objectif était d’amener des dossiers, pas de faire une belle page.",
     href: "/work/kohen-avocats",
   },
   {
