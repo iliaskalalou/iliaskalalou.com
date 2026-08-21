@@ -70,6 +70,7 @@ const PORTRAIT_SHADOW: CSSProperties = {
 };
 
 const NAV = [
+  { label: "Services", href: "#services" },
   { label: "Projets", href: "#work" },
   { label: "À propos", href: "#about" },
   { label: "Contact", href: "#contact" },
@@ -203,9 +204,8 @@ export default function HeroV2() {
             {...enter(0.06, 18)}
           >
             Je conçois et je mets en production des systèmes de machine
-            learning : pipelines de données, entraînement de modèles, et tout
-            ce qui les fait tenir une fois en service. Depuis un an, en
-            freelance pour une startup d’IA.
+            learning : pipelines de données, entraînement de modèles,
+            automatisation IA.
           </motion.p>
 
           <motion.p

@@ -2,6 +2,7 @@ import HeroV2 from "@/components/heroes/HeroV2";
 import Magnetic from "@/components/Magnetic";
 import Marquee from "@/components/Marquee";
 import Reveal, { RevealText } from "@/components/Reveal";
+import Services from "@/components/Services";
 import WorkList, { type Work } from "@/components/WorkList";
 
 // Descriptions are written from what is publicly verifiable. Ilias's exact
@@ -59,6 +60,8 @@ export default function Home() {
       <HeroV2 />
 
       <Marquee items={skills} />
+
+      <Services />
 
       <section id="work" className="scroll-mt-24 py-24">
         <Reveal className="px-6 md:px-12">
