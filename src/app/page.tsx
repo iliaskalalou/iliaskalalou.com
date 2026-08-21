@@ -11,9 +11,9 @@ const workItems: Work[] = [
   {
     index: "01",
     title: "Kohen Avocats",
-    meta: "Web · Paris",
+    meta: "Site vitrine · SEO",
     description:
-      "Le site d’un cabinet pénaliste parisien : huit langues, environ quatre-vingts pages, des sections par domaine d’expertise, et une couche complète de données structurées pensée pour la recherche locale.",
+      "Un site vitrine construit pour être trouvé : environ quatre-vingts pages organisées par situation, données structurées complètes, référencement local. L’objectif était d’amener des dossiers, pas de faire joli.",
     href: "/work/kohen-avocats",
   },
   {

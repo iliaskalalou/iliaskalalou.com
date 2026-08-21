@@ -5,9 +5,9 @@ import ProjectPage, { type Project } from "@/components/ProjectPage";
 // il vaut mieux le dire clairement une fois qu'il aura confirmé ce qui est de lui.
 const project: Project = {
   index: "01 / 03",
-  title: "Un cabinet qui devait être trouvé en huit langues",
+  title: "Exister sur « avocat pénaliste à Paris »",
   lead:
-    "Kohen Avocats est un cabinet pénaliste parisien. On ne cherche pas un avocat pénaliste comme on cherche un prestataire : on le cherche dans l’urgence, souvent au pire moment, et fréquemment pas en français. Le site devait répondre à ça.",
+    "Kohen Avocats est un cabinet pénaliste parisien. L’objectif du site n’était pas d’être joli : c’était d’être trouvé. Ressortir sur les recherches qui amènent des dossiers, dans une ville où la concurrence sur ces mots-clés est féroce, et transformer ces visites en appels.",
   facts: [
     { label: "Client", value: "Kohen Avocats, Paris" },
     { label: "Domaines", value: "Pénal, famille, social" },
@@ -43,18 +43,18 @@ const project: Project = {
   ],
   sections: [
     {
-      heading: "Le problème",
+      heading: "L’objectif",
       body: [
-        "Quelqu’un cherche à deux heures du matin, depuis un commissariat ou le téléphone d’un proche, avec les mots de sa propre langue et de sa propre panique : garde à vue, comparution immédiate, mise en examen.",
-        "Le site devait donc faire deux choses à la fois : ressortir sur ces recherches précises, et rester lisible par des gens qui ne parlent pas français.",
+        "Un cabinet d’avocats se fait connaître par la recommandation et par la recherche. La recommandation, il l’avait déjà. La recherche, non : sans présence en ligne construite, un cabinet n’existe pas pour les gens qui ne le connaissent pas encore.",
+        "Le brief était donc commercial avant d’être technique : ressortir sur les requêtes qui amènent réellement des dossiers — garde à vue, comparution immédiate, mise en examen — et convertir ces visites en prises de contact.",
       ],
     },
     {
-      heading: "Ce que fait le site",
+      heading: "Ce qui a été construit pour ça",
       body: [
-        "Huit langues — français, anglais, arabe, turc, russe, portugais, chinois et luxembourgeois — chacune déclarée correctement, pour que les moteurs servent la bonne version au lieu de deviner.",
-        "Environ quatre-vingts pages, organisées par domaine d’intervention plutôt que par logique interne. Quelqu’un qui cherche une situation précise arrive sur la page de cette situation, pas sur un accueil généraliste.",
-        "Une couche complète de données structurées : le cabinet comme service juridique, ses domaines, ses questions fréquentes, ses avis, son fil d’ariane. C’est la moitié invisible du travail, et c’est elle qui place un cabinet devant les résultats cartographiques plutôt qu’en troisième page.",
+        "Environ quatre-vingts pages, organisées par situation plutôt que par logique interne au cabinet. Quelqu’un qui cherche un cas précis arrive sur la page de ce cas, pas sur un accueil généraliste — c’est ce qui fait la différence entre une visite et un appel.",
+        "Une couche complète de données structurées : le cabinet comme service juridique, ses domaines, ses questions fréquentes, ses avis, son fil d’ariane. C’est la moitié invisible du travail, celle qui décide si un cabinet apparaît dans les résultats cartographiques ou en troisième page.",
+        "Et huit langues, correctement déclarées, pour élargir l’audience au-delà des francophones. Ce n’est pas le cœur du sujet, mais dans une ville comme Paris ça ouvre une part de marché que la plupart des cabinets laissent de côté.",
       ],
     },
     {
