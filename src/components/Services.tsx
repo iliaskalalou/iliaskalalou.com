@@ -11,7 +11,7 @@ const services = [
   },
   {
     title: "Développement web",
-    body: "Sites vitrines et applications, de la conception à la mise en ligne, avec l’infrastructure qui va avec.",
+    body: "Sites vitrines et applications, de la conception à la mise en ligne.",
   },
   {
     title: "Référencement & acquisition",
@@ -33,9 +33,9 @@ export default function Services() {
         </p>
 
         <p className="mb-16 max-w-[58ch] text-xl leading-relaxed md:text-2xl">
-          Deux besoins qui vont ensemble : être trouvé par de nouveaux clients,
-          et cesser de perdre du temps sur ce qui peut tourner tout seul. Je
-          couvre les deux.
+          Je travaille avec des cabinets, des indépendants et des PME. Deux
+          sujets reviennent toujours : être visible quand on vous cherche, et
+          automatiser le travail répétitif qui ne rapporte rien.
         </p>
 
         <div className="grid gap-x-12 gap-y-12 md:grid-cols-3">
