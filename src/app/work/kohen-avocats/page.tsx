@@ -17,28 +17,10 @@ const project: Project = {
   shots: [
     {
       src: "/work/kohen/home.webp",
-      caption: "L’accueil — les huit drapeaux en haut à droite, la note Google en bas à gauche",
+      caption: "L’accueil — les huit langues en haut à droite, la note Google en bas à gauche",
       width: 1400,
       height: 875,
       wide: true,
-    },
-    {
-      src: "/work/kohen/reviews.webp",
-      caption: "Les domaines d’intervention, puis les avis Google et Trustpilot agrégés en direct",
-      width: 1400,
-      height: 875,
-    },
-    {
-      src: "/work/kohen/arabic.webp",
-      caption: "La version arabe se lit vraiment de droite à gauche : toute la mise en page bascule",
-      width: 1400,
-      height: 875,
-    },
-    {
-      src: "/work/kohen/mobile.webp",
-      caption: "Le mobile, d’où vient l’essentiel du trafic",
-      width: 390,
-      height: 844,
     },
   ],
   sections: [
